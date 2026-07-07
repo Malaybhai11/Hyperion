@@ -3,7 +3,6 @@
 import { hotkeys } from "@workspace/core/config/hotkeys";
 import { themes } from "@workspace/core/config/themes";
 import { useDrawerHistory } from "@workspace/core/hooks/use-drawer-history";
-import { useLanguageSwitcher } from "@workspace/core/hooks/use-language-switcher";
 import { useThemeTransition } from "@workspace/core/hooks/use-theme-transition";
 import { formatHotkeyDisplay } from "@workspace/core/lib/utils";
 import { useCommandPaletteStore } from "@workspace/core/stores/command-palette-store";
@@ -11,7 +10,6 @@ import { useHotkeysDialogStore } from "@workspace/core/stores/hotkeys-store";
 import { useSidebarStore } from "@workspace/core/stores/sidebar-store";
 import { useThemeStore } from "@workspace/core/stores/theme-store";
 import { useTranslations } from "@workspace/i18n";
-import { localeConfig, routing } from "@workspace/i18n/routing";
 import {
   Command,
   CommandEmpty,
@@ -99,7 +97,6 @@ export function CommandPalette({
   const { variant, setVariant } = useSidebarStore();
   const { selectedTheme, setSelectedTheme } = useThemeStore();
   const toggleHotkeysDialog = useHotkeysDialogStore((s) => s.toggle);
-  const { locale, isPending, changeLanguage } = useLanguageSwitcher();
 
   const runCommand = useCallback(
     (command: () => unknown) => {
@@ -248,24 +245,6 @@ export function CommandPalette({
           </CommandGroup>
 
           <CommandSeparator className="my-2" />
-
-          <CommandGroup className={groupClasses} heading={t("language")}>
-            {routing.locales.map((loc) => {
-              const config = localeConfig[loc as keyof typeof localeConfig];
-              return (
-                <CommandMenuItem
-                  data-checked={locale === loc}
-                  disabled={isPending}
-                  key={loc}
-                  onSelect={() => runCommand(() => changeLanguage(loc))}
-                  value={`${config.nativeName} ${config.label}`}
-                >
-                  <span className="mr-2 text-base">{config.flag}</span>
-                  <span>{config.nativeName}</span>
-                </CommandMenuItem>
-              );
-            })}
-          </CommandGroup>
 
           {!isMobile && (
             <>

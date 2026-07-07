@@ -21,10 +21,6 @@
     "missingName": "Missing Information",
     "missingNameDesc": "Please enter a name to greet."
   },
-  "LanguageCard": {
-    "title": "Language",
-    "description": "Select your preferred language"
-  },
   "ModeCard": {
     "title": "Modes",
     "description": "Choose your mode or customize your style",
@@ -105,7 +101,6 @@
     "goOverview": "Go to Overview",
     "goReports": "Go to Reports",
     "goSettings": "Go to Settings",
-    "language": "Language",
     "sidebarVariants": "Sidebar Variants",
     "sidebar": "Sidebar",
     "floating": "Floating",

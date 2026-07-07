@@ -1,6 +1,5 @@
 "use client";
 
-import { LanguageToggle } from "@workspace/core/components/common/language-toggle";
 import { ModeToggle } from "@workspace/core/components/common/mode-toggle";
 import { NotificationCenter } from "@workspace/core/components/common/notification-center";
 import { navigationData } from "@workspace/core/config/navigation";
@@ -131,7 +130,6 @@ export function AppHeader({ pathname, LinkComponent = "a" }: AppHeaderProps) {
             orientation="vertical"
           />
           <NotificationCenter />
-          <LanguageToggle />
           <ModeToggle />
         </div>
       </div>
