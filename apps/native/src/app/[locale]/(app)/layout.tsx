@@ -1,16 +1,25 @@
 "use client";
 
 import { AuthProvider } from "@workspace/core/components/auth/auth-provider";
-import { AppLayout } from "../components/app-layout";
+import { AppLayout } from "@workspace/core/components/layout/app-layout";
+import { usePathname, useRouter } from "next/navigation";
 
 interface AppGroupLayoutProps {
   children: React.ReactNode;
 }
 
 export default function AppGroupLayout({ children }: AppGroupLayoutProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+
   return (
     <AuthProvider>
-      <AppLayout>{children}</AppLayout>
+      <AppLayout
+        navigate={(path) => router.push(path)}
+        pathname={pathname}
+      >
+        {children}
+      </AppLayout>
     </AuthProvider>
   );
 }
