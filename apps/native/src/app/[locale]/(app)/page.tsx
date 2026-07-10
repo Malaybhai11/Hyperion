@@ -1,15 +1,14 @@
-import { routing } from "@workspace/i18n/routing";
-import { redirect } from "next/navigation";
+"use client";
 
-export function generateStaticParams() {
-  return routing.locales.map((locale) => ({ locale }));
-}
+import { useRouter } from "@workspace/i18n/navigation";
+import { useEffect } from "react";
 
-export default async function RootRedirect({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
-  const { locale } = await params;
-  redirect(`/${locale}/workspace`);
+export default function RootRedirect() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/workspace");
+  }, [router]);
+
+  return null;
 }

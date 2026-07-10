@@ -2,7 +2,7 @@
 
 import { AuthProvider } from "@workspace/core/components/auth/auth-provider";
 import { AppLayout } from "@workspace/core/components/layout/app-layout";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter } from "@workspace/i18n/navigation";
 
 interface AppGroupLayoutProps {
   children: React.ReactNode;
