@@ -133,7 +133,7 @@ function Word({
       className={cn(
         "inline-block will-change-transform",
         highlight &&
-          "landing-shimmer bg-gradient-to-r from-primary via-[#ffc199] to-primary bg-clip-text text-transparent"
+          "landing-shimmer bg-gradient-to-r from-primary via-muted-foreground to-primary bg-clip-text text-transparent"
       )}
       initial={
         reduceMotion ? false : { opacity: 0, y: 20, filter: "blur(12px)" }
@@ -276,41 +276,10 @@ export default function HeroSection() {
 
   return (
     <main className="overflow-hidden bg-background">
-      {/* ── Hero ── */}
-      <section className="relative">
-        {/* Breathing single-tone glow */}
-        <div
-          aria-hidden={true}
-          className="landing-glow-breathe pointer-events-none absolute inset-x-0 top-0 -z-10 h-[640px] [background:radial-gradient(60%_60%_at_50%_0%,color-mix(in_oklab,var(--color-primary)_14%,transparent)_0%,transparent_70%)]"
-        />
-        {/* Faint blueprint grid, masked so it dissolves before content */}
-        <div
-          aria-hidden={true}
-          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[720px] opacity-[0.14] [background-size:44px_44px] [background:linear-gradient(to_right,var(--color-border)_1px,transparent_1px),linear-gradient(to_bottom,var(--color-border)_1px,transparent_1px)] [mask-image:radial-gradient(ellipse_62%_52%_at_50%_0%,#000_55%,transparent_100%)]"
-        />
-        {/* Drifting accent particles */}
-        <div
-          aria-hidden={true}
-          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[640px]"
-        >
-          {PARTICLES.map((p) => (
-            <span
-              className="landing-drift absolute rounded-full bg-primary/60"
-              key={`${p.left}-${p.top}`}
-              style={
-                {
-                  left: p.left,
-                  top: p.top,
-                  width: p.size,
-                  height: p.size,
-                  "--drift-dur": p.dur,
-                  "--drift-delay": p.delay,
-                  "--drift-x": p.x,
-                } as CSSProperties
-              }
-            />
-          ))}
-        </div>
+      {/* ── Hero — full-viewport, GridScan holographic backdrop ── */}
+      <section className="relative flex min-h-screen flex-col justify-center">
+        <HeroBackdrop />
+
         <div className="relative z-10 w-full pt-24 pb-16 md:pt-28">
           <div className="mx-auto max-w-7xl px-6">
             <div className="text-center">
@@ -400,33 +369,6 @@ export default function HeroSection() {
               </motion.div>
             </div>
           </div>
-
-          {/* Screenshot — scroll-linked 3D untilt with orbiting border light */}
-          <Reveal direction="up" duration={450} offset={48}>
-            <div
-              className="mask-b-from-55% relative mt-10 -mr-56 overflow-hidden px-2 [perspective:1200px] sm:mt-14 sm:mr-0 md:mt-20"
-              ref={shotRef}
-            >
-              <motion.div
-                className="relative mx-auto max-w-6xl overflow-hidden rounded-2xl border border-border bg-card/40 p-4 shadow-2xl shadow-black/40 will-change-transform"
-                style={{ rotateX, scale, transformPerspective: 1200 }}
-              >
-                <Image
-                  alt="Hyperion workspace screenshot"
-                  className="relative aspect-15/8 rounded-2xl border border-border/50"
-                  height="1080"
-                  priority={true}
-                  src="/app-screen-dark.png"
-                  width="1920"
-                />
-                <BorderBeam
-                  className="from-transparent via-primary to-transparent"
-                  duration={6}
-                  size={200}
-                />
-              </motion.div>
-            </div>
-          </Reveal>
         </div>
       </section>
 
