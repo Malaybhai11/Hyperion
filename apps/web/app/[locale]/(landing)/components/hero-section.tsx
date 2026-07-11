@@ -3,7 +3,14 @@
 import { siteConfig } from "@workspace/core/config/site";
 import { fetchLatestGithubVersion } from "@workspace/core/lib/utils";
 import { BorderBeam } from "@workspace/ui/components/landing/border-beam";
+import CountUp from "@workspace/ui/components/marketing/CountUp";
+import {
+  MagicBentoCard,
+  MagicBentoGrid,
+} from "@workspace/ui/components/marketing/MagicBento";
 import { Reveal } from "@workspace/ui/components/marketing/reveal";
+import ShinyText from "@workspace/ui/components/marketing/ShinyText";
+import { StarBorder } from "@workspace/ui/components/marketing/StarBorder";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   ArrowRight,
@@ -27,14 +34,11 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { HeroBackdrop } from "./hero-backdrop";
-import { CodeBlock, CtaLink, Eyebrow, GlowCard } from "./marketing-kit";
-import CountUp from "@workspace/ui/components/marketing/CountUp";
-import { MagicBentoCard, MagicBentoGrid } from "@workspace/ui/components/marketing/MagicBento";
-import ShinyText from "@workspace/ui/components/marketing/ShinyText";
-import { StarBorder } from "@workspace/ui/components/marketing/StarBorder";
+import { CtaLink, Eyebrow, GlowCard } from "./marketing-kit";
 import { easeOut, Marquee } from "./motion-primitives";
+import { Terminal, type TerminalLineInput } from "./terminal";
 
 /* ── Copy ─────────────────────────────────────────────────── */
 
@@ -42,8 +46,7 @@ import { easeOut, Marquee } from "./motion-primitives";
 const HEADLINE = ["Your", "AI", "Engineering", "Workspace"];
 const HEADLINE_HIGHLIGHT_FROM = 3;
 
-const SUBHEAD =
-  "One workspace, up to  8  AI agents—code, test, ship together.";
+const SUBHEAD = "One workspace, up to  8  AI agents—code, test, ship together.";
 
 /* Quiet glass pills in place of CTA buttons — interactive-feeling,
    not button-shaped. */
@@ -148,15 +151,17 @@ const SWARM_CHECKLIST = [
   "Interrupt, redirect, or take over at any moment",
 ];
 
-const TERMINAL_CODE = `$ hyperion swarm start --agents 4
-
-✓ workspace attached — 4 terminals tiled
-● agent-01  planning   → roadmap.md
-● agent-02  coding     → src/auth/session.ts
-● agent-03  testing    → 148 passed, 0 failed
-● agent-04  reviewing  → PR #214 approved
-
-swarm active · 4 agents · you are in command`;
+const TERMINAL_LINES: TerminalLineInput[] = [
+  { text: "$ hyperion swarm start --agents 4" },
+  { text: "" },
+  { text: "workspace attached — 4 terminals tiled", status: "success" },
+  { text: "agent-01  planning   → roadmap.md", status: "info" },
+  { text: "agent-02  coding     → src/auth/session.ts", status: "info" },
+  { text: "agent-03  testing    → 148 passed, 0 failed", status: "info" },
+  { text: "agent-04  reviewing  → PR #214 approved", status: "success" },
+  { text: "" },
+  { text: "swarm active · 4 agents · you are in command" },
+];
 
 /* ── Micro components ─────────────────────────────────────── */
 
@@ -186,16 +191,13 @@ function HeroStatCard({
   const onCountEnd = useCallback(() => setFloating(true), []);
 
   return (
-    <Reveal
-      className="h-full"
-      direction="up"
-      duration={340}
-      index={index}
-    >
+    <Reveal className="h-full" direction="up" duration={340} index={index}>
       <div
         className={cn(
           "h-full",
-          floating && !reduceMotion && "landing-card-float hover:[animation-play-state:paused]"
+          floating &&
+            !reduceMotion &&
+            "landing-card-float hover:[animation-play-state:paused]"
         )}
         style={
           {
@@ -473,19 +475,18 @@ export default function HeroSection() {
                   Deliberately one size class down from a typical hero — the
                   content, not the type, should carry the section. */}
               <div className="mx-auto mt-10 max-w-3xl text-balance font-display text-[2.75rem] leading-[1.08] tracking-tight max-md:font-semibold md:text-[3.75rem] lg:mt-12 lg:text-7xl xl:text-[5rem]">
-   {/* First word */}
-   <span>{HEADLINE[0]}</span>{' '}
-   {/* Shiny AI word */}
-   <ShinyText
-     text={HEADLINE[1]!}
-     className="inline-block"
-     speed={0.8}
-   />
-   {/* Remaining words before highlight */}
-   <span>{` ${HEADLINE[2]}`}</span>
-   <br />
-   <span>{HEADLINE[HEADLINE_HIGHLIGHT_FROM]}</span>
-</div>
+                {/* First word */}
+                <span>{HEADLINE[0]}</span> {/* Shiny AI word */}
+                <ShinyText
+                  className="inline-block"
+                  speed={0.8}
+                  text={HEADLINE[1]!}
+                />
+                {/* Remaining words before highlight */}
+                <span>{` ${HEADLINE[2]}`}</span>
+                <br />
+                <span>{HEADLINE[HEADLINE_HIGHLIGHT_FROM]}</span>
+              </div>
 
               <motion.p
                 animate={{ opacity: 1, y: 0 }}
@@ -535,7 +536,7 @@ export default function HeroSection() {
           {/* The parent owns the 3D scene: deep perspective, with
               preserve-3d carried down so the tilt renders inside it. */}
           <div
-            className="mask-b-from-55% -mr-56 -mt-10 relative overflow-hidden px-2 pb-12 [perspective:2400px] sm:mr-0"
+            className="mask-b-from-55% relative -mt-10 -mr-56 overflow-hidden px-2 pb-12 [perspective:2400px] sm:mr-0"
             ref={shotRef}
           >
             {/* Suspended-object bob (±3px) on its own element so it
@@ -632,10 +633,7 @@ export default function HeroSection() {
                 key={feature.title}
               >
                 <MagicBentoCard
-                  className={cn(
-                    "flex h-full flex-col p-6",
-                    isHero && "lg:p-8"
-                  )}
+                  className={cn("flex h-full flex-col p-6", isHero && "lg:p-8")}
                   enableMagnetism={false}
                 >
                   <div
@@ -752,10 +750,10 @@ export default function HeroSection() {
           </div>
         </Reveal>
         <div className="mx-auto mt-10 max-w-[1000px]">
-          <CodeBlock
-            code={TERMINAL_CODE}
-            header="hyperion — swarm"
-            language="shell"
+          <Terminal
+            lines={TERMINAL_LINES}
+            shell="zsh"
+            title="hyperion — swarm"
             typing={true}
           />
         </div>

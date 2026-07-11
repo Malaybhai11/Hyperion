@@ -189,7 +189,8 @@ export function Callout({
   title?: string;
 }) {
   const label =
-    title ?? (variant === "tip" ? "Tip" : variant === "warning" ? "Warning" : "Note");
+    title ??
+    (variant === "tip" ? "Tip" : variant === "warning" ? "Warning" : "Note");
   return (
     <div
       className={cn(
@@ -411,7 +412,10 @@ export function FAQ({
 }
 
 /**
- * CodeBlock — the site's one shared terminal window.
+ * CodeBlock — shared terminal-style window used by the coding and
+ * docs pages. (The hero and features pages use the newer `Terminal`
+ * component from ./terminal instead — scoped there deliberately, not
+ * yet rolled out here.)
  *
  * Fixed-size viewport, like a real terminal app (Warp/iTerm/VS Code):
  * 360px tall on mobile, 440px on tablet, 500px on desktop, up to

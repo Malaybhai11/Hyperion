@@ -23,12 +23,12 @@ import {
 } from "../components/motion-primitives";
 import {
   Badge,
-  CodeBlock,
   CtaLink,
   Eyebrow,
   GlowCard,
 } from "../components/marketing-kit";
 import { ParallaxField } from "../components/parallax-field";
+import { Terminal, type TerminalLineInput } from "../components/terminal";
 import { MagicBentoCard, MagicBentoGrid } from "@workspace/ui/components/marketing/MagicBento";
 import { cn } from "@workspace/ui/lib/utils";
 
@@ -131,21 +131,23 @@ const pillars = [
   },
 ];
 
-const DEMO_CODE = `$ hyperion agents plan "add rate limiting to the API"
-
-▸ planning     4 tasks · 2 can run in parallel
-  01  design limiter middleware        agent-01
-  02  implement token bucket           agent-02
-  03  wire into router  (needs 01,02)  agent-01
-  04  integration tests (needs 03)     agent-03
-
-▸ dispatching  3 agents · 3 terminals attached
-
-agent-02 › src/middleware/bucket.ts    +214 −0
-agent-01 › src/middleware/limiter.ts   +96 −4
-agent-03 › tests/rate-limit.test.ts    48 passed
-
-✓ PR #219 ready for review · 22 min end to end`;
+const DEMO_LINES: TerminalLineInput[] = [
+  { text: '$ hyperion agents plan "add rate limiting to the API"' },
+  { text: "" },
+  { text: "planning     4 tasks · 2 can run in parallel", status: "info" },
+  { text: "01  design limiter middleware        agent-01" },
+  { text: "02  implement token bucket           agent-02" },
+  { text: "03  wire into router  (needs 01,02)  agent-01" },
+  { text: "04  integration tests (needs 03)     agent-03" },
+  { text: "" },
+  { text: "dispatching  3 agents · 3 terminals attached", status: "info" },
+  { text: "" },
+  { text: "agent-02 › src/middleware/bucket.ts    +214 −0" },
+  { text: "agent-01 › src/middleware/limiter.ts   +96 −4" },
+  { text: "agent-03 › tests/rate-limit.test.ts    48 passed" },
+  { text: "" },
+  { text: "PR #219 ready for review · 22 min end to end", status: "success" },
+];
 
 export default function FeaturesPage() {
   return (
@@ -286,12 +288,7 @@ export default function FeaturesPage() {
           </div>
         </Reveal>
         <div className="mt-10">
-          <CodeBlock
-            code={DEMO_CODE}
-            header="hyperion — agents"
-            language="shell"
-            typing={true}
-          />
+          <Terminal lines={DEMO_LINES} shell="zsh" title="hyperion — agents" typing={true} />
         </div>
       </section>
 

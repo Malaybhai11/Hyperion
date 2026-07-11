@@ -230,6 +230,36 @@
   }
 }
 
+/* Terminal scroll — thin, theme-matched scrollbar for the terminal
+   window's internal viewport, both Firefox (scrollbar-color/width)
+   and Chromium/WebKit (::-webkit-scrollbar). scroll-behavior:smooth
+   only affects scrollIntoView/scrollTo-style scrolls (mouse wheel is
+   already smooth natively, and the typing auto-scroll writes
+   scrollTop directly, which bypasses it) — so it only smooths
+   manual/programmatic jumps, never fights the per-character pin. */
+.landing-terminal-scroll {
+  scroll-behavior: smooth;
+  scrollbar-color: var(--color-border) transparent;
+  scrollbar-width: thin;
+}
+
+.landing-terminal-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.landing-terminal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.landing-terminal-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+}
+
+.landing-terminal-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+}
+
 /* Footer wordmark watermark — near-invisible at rest (2–5%) on
    pointer devices, since the cursor-following spotlight in
    footer-wordmark.tsx does the reveal. Touch devices have no hover,
