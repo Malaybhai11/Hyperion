@@ -1,5 +1,6 @@
 "use client";
 
+import { useTheme } from "next-themes";
 import { use, useEffect, useId, useState } from "react";
 
 export function Mermaid({ chart }: { chart: string }) {
@@ -33,7 +34,7 @@ function cachePromise<T>(
 
 function MermaidContent({ chart }: { chart: string }) {
   const id = useId();
-  const resolvedTheme = "dark";
+  const { resolvedTheme } = useTheme();
 
   // Asynchronously load mermaid to prevent SSR issues and reduce bundle size
   const { default: mermaid } = use(
