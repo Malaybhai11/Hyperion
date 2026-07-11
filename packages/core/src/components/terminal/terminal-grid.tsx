@@ -16,16 +16,26 @@ function getGridClass(count: number): string {
     case 4:
       return "grid-cols-2 grid-rows-2";
     case 5:
-      return "grid-cols-3 grid-rows-2";
+      return "grid-cols-6 grid-rows-2"; // 6-column grid for 3+2 layout
     case 6:
       return "grid-cols-3 grid-rows-2";
     case 7:
-      return "grid-cols-4 grid-rows-2";
+      return "grid-cols-12 grid-rows-2"; // 12-column grid for 4+3 layout
     case 8:
       return "grid-cols-4 grid-rows-2";
     default:
       return "grid-cols-1 grid-rows-1";
   }
+}
+
+function getPaneClass(totalCount: number, index: number): string {
+  if (totalCount === 5) {
+    return index < 3 ? "col-span-2" : "col-span-3";
+  }
+  if (totalCount === 7) {
+    return index < 4 ? "col-span-3" : "col-span-4";
+  }
+  return "";
 }
 
 export function TerminalGrid() {
@@ -72,16 +82,23 @@ export function TerminalGrid() {
             }}
           >
             {ws.panes.map((pane, index) => (
-              <TerminalPane
-                autoCommand={ws.autoCommand}
-                cwd={ws.directory}
-                directory={ws.directory}
-                id={pane.id}
-                index={index}
-                isActiveWorkspace={isActive}
+              <div
+                className={cn(
+                  "h-full w-full",
+                  getPaneClass(ws.panes.length, index)
+                )}
                 key={pane.id}
-                title={`Terminal ${index + 1}`}
-              />
+              >
+                <TerminalPane
+                  autoCommand={ws.autoCommand}
+                  cwd={ws.directory}
+                  directory={ws.directory}
+                  id={pane.id}
+                  index={index}
+                  isActiveWorkspace={isActive}
+                  title={`Terminal ${index + 1}`}
+                />
+              </div>
             ))}
           </div>
         );

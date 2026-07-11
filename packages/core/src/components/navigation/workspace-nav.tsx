@@ -6,9 +6,17 @@ import {
   type Workspace,
 } from "@workspace/core/stores/workspace-store";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@workspace/ui/components/dropdown-menu";
+import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
@@ -16,8 +24,10 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import {
   ChevronRight,
+  Copy,
   Edit2,
   LayoutGrid,
+  MoreHorizontal,
   Pin,
   PinOff,
   Plus,
@@ -26,57 +36,11 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useCallback, useState } from "react";
+import { toast } from "sonner";
 
 interface WorkspaceNavProps {
   navigate: (path: string) => void;
   onNewWorkspace: () => void;
-}
-
-interface WorkspaceItemActionsProps {
-  isPinned?: boolean;
-  onDeleteClick: (e: React.MouseEvent) => void;
-  onPinToggle: (e: React.MouseEvent) => void;
-  onRenameClick: (e: React.MouseEvent) => void;
-}
-
-function WorkspaceItemActions({
-  isPinned,
-  onPinToggle,
-  onRenameClick,
-  onDeleteClick,
-}: WorkspaceItemActionsProps) {
-  return (
-    <div className="pointer-events-none absolute top-1/2 right-3 z-30 flex translate-x-1 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/20 bg-background/90 px-1 py-0.5 opacity-0 shadow-lg backdrop-blur-xs transition-all duration-200 group-hover/item:pointer-events-auto group-hover/item:translate-x-0 group-hover/item:opacity-100 group-data-[collapsible=icon]:hidden">
-      <button
-        className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        onClick={onPinToggle}
-        title={isPinned ? "Unpin Workspace" : "Pin Workspace"}
-        type="button"
-      >
-        {isPinned ? (
-          <PinOff className="size-3 text-primary" />
-        ) : (
-          <Pin className="size-3" />
-        )}
-      </button>
-      <button
-        className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        onClick={onRenameClick}
-        title="Rename Workspace"
-        type="button"
-      >
-        <Edit2 className="size-3" />
-      </button>
-      <button
-        className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-        onClick={onDeleteClick}
-        title="Delete Workspace"
-        type="button"
-      >
-        <Trash2 className="size-3" />
-      </button>
-    </div>
-  );
 }
 
 export function WorkspaceNav({ navigate, onNewWorkspace }: WorkspaceNavProps) {
@@ -87,6 +51,7 @@ export function WorkspaceNav({ navigate, onNewWorkspace }: WorkspaceNavProps) {
     activeWorkspaceId,
     setActiveWorkspace,
     deleteWorkspace,
+    duplicateWorkspace,
     renameWorkspace,
     togglePinWorkspace,
   } = useWorkspaceStore();
@@ -135,17 +100,17 @@ export function WorkspaceNav({ navigate, onNewWorkspace }: WorkspaceNavProps) {
       <SidebarMenuItem className="group/item relative px-1.5" key={ws.id}>
         {isActive && (
           <motion.div
-            className="absolute top-1.5 bottom-1.5 left-0 z-20 w-[2.5px] rounded-full bg-primary shadow-[0_0_6px_var(--primary)]"
+            className="absolute top-1.5 bottom-1.5 left-0 z-20 w-[3px] rounded-full bg-primary shadow-[0_0_10px_#ffe0c2,0_0_20px_#ffe0c2]"
             layoutId="activeWorkspaceIndicator"
-            transition={{ type: "spring", stiffness: 380, damping: 30 }}
+            transition={{ type: "spring", stiffness: 350, damping: 25 }}
           />
         )}
 
         {renamingId === ws.id ? (
-          <div className="flex h-9.5 w-full items-center gap-2 px-3">
+          <div className="flex h-10 w-full items-center gap-2 px-3">
             <input
               autoFocus
-              className="flex-1 rounded border border-primary/50 bg-background px-2 py-1 font-sans text-foreground text-xs outline-none focus:ring-1 focus:ring-primary/20"
+              className="flex-1 rounded-md border border-primary/50 bg-background/80 px-2 py-1 font-sans text-foreground text-xs outline-none transition-all duration-200 focus:ring-2 focus:ring-primary/20"
               onBlur={() => handleRenameSave(ws.id)}
               onChange={(e) => setRenameValue(e.target.value)}
               onKeyDown={(e) => {
@@ -162,60 +127,116 @@ export function WorkspaceNav({ navigate, onNewWorkspace }: WorkspaceNavProps) {
           <>
             <SidebarMenuButton
               className={cn(
-                "relative h-9 w-full justify-start gap-2.5 rounded-lg border transition-all duration-200 group-data-[collapsible=icon]:p-2 group-data-[collapsible=icon]:pr-2",
+                "relative h-10 w-full justify-start gap-2.5 rounded-lg border transition-all duration-300 ease-out group-data-[collapsible=icon]:p-2 group-data-[collapsible=icon]:pr-2",
                 isActive
-                  ? "border-primary/15 bg-primary/[0.04] font-semibold text-foreground shadow-primary/[0.02] shadow-sm backdrop-blur-xs"
-                  : "border-transparent font-medium text-muted-foreground hover:bg-muted/15 hover:text-foreground"
+                  ? "border-primary/25 bg-gradient-to-r from-primary/[0.08] via-primary/[0.02] to-transparent font-semibold text-foreground shadow-primary/[0.02] shadow-sm backdrop-blur-xs"
+                  : "border-transparent font-medium text-muted-foreground hover:border-border/20 hover:bg-muted/10 hover:text-foreground"
               )}
               isActive={isActive}
               onClick={() => handleSelect(ws.id)}
             >
               <ChevronRight
                 className={cn(
-                  "size-3 shrink-0 transition-transform group-data-[collapsible=icon]:hidden",
+                  "size-3 shrink-0 transition-all duration-300 group-data-[collapsible=icon]:hidden",
                   isActive
-                    ? "rotate-90 text-primary"
-                    : "text-muted-foreground/45 group-hover/item:text-muted-foreground/75"
+                    ? "rotate-90 scale-110 text-primary"
+                    : "text-muted-foreground/40 group-hover/item:translate-x-0.5 group-hover/item:text-muted-foreground/75"
                 )}
               />
               <Terminal
                 className={cn(
-                  "size-3.5 shrink-0",
-                  isActive ? "text-primary" : "text-muted-foreground/50"
+                  "size-4 shrink-0 transition-transform duration-300",
+                  isActive
+                    ? "scale-105 text-primary drop-shadow-[0_0_4px_rgba(255,224,194,0.4)]"
+                    : "text-muted-foreground/40 group-hover/item:scale-105 group-hover/item:text-primary/70"
                 )}
               />
-              <span className="truncate pr-1 text-sm group-data-[collapsible=icon]:hidden">
+              <span className="truncate pr-1 text-sm tracking-wide group-data-[collapsible=icon]:hidden">
                 {ws.name}
               </span>
 
               {/* Terminal count pill */}
               <span
                 className={cn(
-                  "absolute right-2 scale-90 rounded border px-1.5 py-0.5 font-bold font-mono text-[9px] transition-opacity group-hover/item:opacity-0 group-data-[collapsible=icon]:hidden",
+                  "absolute right-2 scale-[0.85] rounded-full border px-2 py-0.5 font-bold font-mono text-[9px] transition-all duration-200 group-hover/item:translate-x-[-20px] group-data-[collapsible=icon]:hidden",
                   isActive
-                    ? "border-primary/20 bg-primary/10 text-primary"
-                    : "border-border/40 bg-muted text-muted-foreground/60 opacity-70"
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "border-border/40 bg-muted/60 text-muted-foreground/60"
                 )}
               >
                 {ws.terminalCount}
               </span>
             </SidebarMenuButton>
 
-            <WorkspaceItemActions
-              isPinned={ws.isPinned}
-              onDeleteClick={(e) => handleDelete(ws.id, e)}
-              onPinToggle={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                togglePinWorkspace(ws.id);
-              }}
-              onRenameClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setRenamingId(ws.id);
-                setRenameValue(ws.name);
-              }}
-            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild={true}>
+                <SidebarMenuAction
+                  className="opacity-0 transition-opacity group-hover/item:opacity-100"
+                  showOnHover={true}
+                >
+                  <MoreHorizontal className="size-4" />
+                </SidebarMenuAction>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align={isMobile ? "end" : "start"}
+                className="w-48 border-border/60 bg-[#09090d]/98 backdrop-blur-xl"
+                side={isMobile ? "bottom" : "right"}
+              >
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePinWorkspace(ws.id);
+                    toast.success(
+                      ws.isPinned ? "Workspace unpinned" : "Workspace pinned"
+                    );
+                  }}
+                >
+                  {ws.isPinned ? (
+                    <>
+                      <PinOff className="mr-2 size-3.5 text-muted-foreground" />
+                      <span>Unpin Workspace</span>
+                    </>
+                  ) : (
+                    <>
+                      <Pin className="mr-2 size-3.5 text-muted-foreground" />
+                      <span>Pin Workspace</span>
+                    </>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setRenamingId(ws.id);
+                    setRenameValue(ws.name);
+                  }}
+                >
+                  <Edit2 className="mr-2 size-3.5 text-muted-foreground" />
+                  <span>Rename</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    duplicateWorkspace(ws.id);
+                    toast.success("Workspace duplicated successfully");
+                  }}
+                >
+                  <Copy className="mr-2 size-3.5 text-muted-foreground" />
+                  <span>Duplicate</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-border/40" />
+                <DropdownMenuItem
+                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteWorkspace(ws.id);
+                    toast.success("Workspace deleted");
+                  }}
+                >
+                  <Trash2 className="mr-2 size-3.5" />
+                  <span>Delete</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         )}
       </SidebarMenuItem>
@@ -224,47 +245,50 @@ export function WorkspaceNav({ navigate, onNewWorkspace }: WorkspaceNavProps) {
 
   return (
     <SidebarGroup className="px-2">
-      <div className="flex items-center justify-between px-2 py-1.5 group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel className="font-bold text-[10px] text-muted-foreground/60 uppercase tracking-widest">
+      <div className="flex items-center justify-between px-2 py-2 group-data-[collapsible=icon]:hidden">
+        <SidebarGroupLabel className="font-bold text-[9px] text-muted-foreground/40 uppercase tracking-widest">
           Workspaces
         </SidebarGroupLabel>
         <button
-          className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex size-5 items-center justify-center rounded-md text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground"
           onClick={onNewWorkspace}
           title="New Workspace"
           type="button"
         >
-          <Plus className="size-4" />
+          <Plus className="size-3.5 transition-transform duration-200 hover:rotate-90" />
         </button>
       </div>
 
-      <SidebarMenu className="mt-1 gap-1">
+      <SidebarMenu className="mt-1 gap-1.5">
         <SidebarMenuItem className="px-1.5">
           <SidebarMenuButton
-            className="w-full justify-start gap-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-4.5 font-semibold text-primary shadow-2xs transition-all hover:bg-primary/10 hover:text-primary active:scale-[0.98]"
+            className={cn(
+              "w-full justify-start gap-2.5 rounded-lg border px-3 py-5 font-semibold transition-all duration-300 ease-out active:scale-[0.98] group-data-[collapsible=icon]:p-2",
+              "border-primary/20 bg-gradient-to-r from-primary/10 to-primary/5 text-primary shadow-[0_4px_12px_-4px_rgba(255,224,194,0.06)] hover:border-primary/45 hover:from-primary/15 hover:to-primary/8 hover:shadow-[0_4px_16px_rgba(255,224,194,0.12)]"
+            )}
             onClick={onNewWorkspace}
           >
-            <div className="flex size-4.5 items-center justify-center rounded bg-primary/10">
-              <Plus className="size-3.5" />
+            <div className="flex size-5 shrink-0 items-center justify-center rounded bg-primary/10 transition-transform duration-300 group-hover:scale-110">
+              <Plus className="size-4 text-primary" />
             </div>
-            <span className="font-bold text-[10px] uppercase tracking-widest group-data-[collapsible=icon]:hidden">
+            <span className="select-none font-bold text-[10px] uppercase tracking-widest group-data-[collapsible=icon]:hidden">
               New Workspace
             </span>
           </SidebarMenuButton>
         </SidebarMenuItem>
 
         {workspaces.length === 0 ? (
-          <div className="flex flex-col items-center justify-center px-4 py-8 text-center group-data-[collapsible=icon]:hidden">
-            <LayoutGrid className="mb-2 size-6 text-muted-foreground/40" />
-            <p className="text-[11px] text-muted-foreground/60 leading-normal">
+          <div className="mt-2 flex flex-col items-center justify-center rounded-lg border border-border/20 border-dashed bg-muted/5 px-4 py-10 text-center group-data-[collapsible=icon]:hidden">
+            <LayoutGrid className="mb-2 size-6 animate-pulse text-muted-foreground/30" />
+            <p className="max-w-[150px] text-[11px] text-muted-foreground/50 leading-normal">
               No workspaces yet. Create one to begin.
             </p>
           </div>
         ) : (
-          <div className="mt-2 space-y-3">
+          <div className="mt-2.5 space-y-4">
             {pinnedWorkspaces.length > 0 && (
               <div className="space-y-1">
-                <div className="px-3 font-bold text-[9px] text-muted-foreground/40 uppercase tracking-widest group-data-[collapsible=icon]:hidden">
+                <div className="select-none px-3 font-semibold text-[9px] text-muted-foreground/35 uppercase tracking-widest group-data-[collapsible=icon]:hidden">
                   Pinned
                 </div>
                 {pinnedWorkspaces.map(renderWorkspaceItem)}
@@ -273,7 +297,7 @@ export function WorkspaceNav({ navigate, onNewWorkspace }: WorkspaceNavProps) {
 
             {regularWorkspaces.length > 0 && (
               <div className="space-y-1">
-                <div className="px-3 font-bold text-[9px] text-muted-foreground/40 uppercase tracking-widest group-data-[collapsible=icon]:hidden">
+                <div className="select-none px-3 font-semibold text-[9px] text-muted-foreground/35 uppercase tracking-widest group-data-[collapsible=icon]:hidden">
                   Active
                 </div>
                 {regularWorkspaces.map(renderWorkspaceItem)}

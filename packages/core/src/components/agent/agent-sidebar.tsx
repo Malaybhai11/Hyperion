@@ -1,5 +1,6 @@
 "use client";
 
+import { safeUUID } from "@workspace/core/lib/uuid";
 import {
   type AgentMessage,
   useAgentStore,
@@ -31,6 +32,7 @@ import { toast } from "sonner";
 
 const MAX_ITERATIONS = 20;
 const MAX_HISTORY_CHARS = 2000;
+const NUMBER_REGEX = /\d+/;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -38,12 +40,51 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+function resolveAgentPanes(
+  agentIdInput: string,
+  targetPanes: { id: string; title: string }[]
+): { id: string; title: string }[] {
+  const cleanId = agentIdInput.trim().toLowerCase();
+
+  if (cleanId === "all") {
+    return targetPanes;
+  }
+
+  // 1. Direct UUID match
+  const directMatch = targetPanes.filter((p) => p.id === agentIdInput);
+  if (directMatch.length > 0) {
+    return directMatch;
+  }
+
+  // 2. Index match (e.g. "1" or "2" or "Agent 1" or "Terminal 1")
+  const numberMatch = cleanId.match(NUMBER_REGEX);
+  if (numberMatch) {
+    const index = Number.parseInt(numberMatch[0], 10) - 1;
+    if (index >= 0 && index < targetPanes.length) {
+      const pane = targetPanes[index];
+      if (pane) {
+        return [pane];
+      }
+    }
+  }
+
+  // 3. Title match (case-insensitive substring)
+  const titleMatch = targetPanes.filter((p) =>
+    p.title.toLowerCase().includes(cleanId)
+  );
+  if (titleMatch.length > 0) {
+    return titleMatch;
+  }
+
+  return [];
+}
+
 function buildSystemPrompt(panes: { id: string; title: string }[]): string {
   const agentList = panes
     .map((p, i) => `  - Agent ${i + 1}: id="${p.id}" (${p.title})`)
     .join("\n");
 
-  return `You are the Hyperion Main Agent — an elite Senior AI Engineer who plans, delegates, monitors, and iterates until the job is done perfectly.
+  return `You are the Hyperion Main Agent — an elite Autonomous Workspace Orchestrator. You coordinate multiple terminal sessions to accomplish complex, multi-step engineering tasks.
 
 ## Your Terminal Agents
 You have ${panes.length} AI coding assistants (e.g. Claude Code) running in separate terminals:
@@ -53,25 +94,26 @@ ${agentList}
 1. prompt_agent(agent_id, prompt) — Type a natural-language instruction into a Terminal Agent's input. This ONLY types the text — it does NOT press Enter.
 2. send_prompt(agent_id) — Press Enter on the Terminal Agent to submit the typed prompt. You MUST call this after every prompt_agent call.
 3. observe_agent(agent_id) — Read the Terminal Agent's recent output to check progress.
-4. wait(seconds) — Pause for 1-30 seconds. ALWAYS wait 8-15 seconds after sending before observing.
+4. wait(seconds) — Pause for 1-30 seconds. ALWAYS wait 5-15 seconds after submitting a prompt before observing.
 
-## Your Workflow (follow this STRICTLY for EVERY prompt)
-1. PLAN: Think step-by-step about the user's goal. Break it into concrete, independent sub-tasks.
-2. ASSIGN: For each agent:
-   a. Call prompt_agent(agent_id, "your instruction here") to type the prompt.
-   b. Call send_prompt(agent_id) to press Enter and submit it.
-3. WAIT: Call wait(10) to give the agent time to work.
-4. OBSERVE: Call observe_agent to read the agent's output.
-5. EVALUATE: Did they succeed? Is the output correct?
-6. ITERATE: If not perfect, send follow-up corrections using prompt_agent + send_prompt again.
+## Coordination & Orchestration Rules (STRICTLY enforced)
+1. **Multi-Terminal Coordination**: You can orchestrate multiple terminals at once. For example, you can launch a dev server on Agent 1, and run tests/linters on Agent 2. Make sure you track the role and progress of each session.
+2. **Context Preservation**: Always remember what task you assigned to each terminal. Treat the terminals as your team of developers.
+3. **Stall & Progress Monitoring**: After submitting a prompt, you MUST call wait(10) then observe_agent(agent_id).
+   - If the terminal output shows the task is still running (e.g. download in progress, server starting, build running), do NOT stop. Call wait(10) and observe_agent again. Repeat until it finishes.
+   - If the output is unchanged twice in a row, the terminal might be stuck or command was not submitted. Re-type and re-submit the prompt.
+4. **Auto-Recovery & Retries**: If a terminal command fails or returns an error:
+   - Analyze the error.
+   - Send a follow-up corrective prompt to that terminal (or another helper terminal) to resolve the issue (e.g. run "npm install" for missing dependencies, adjust config settings).
+   - Retry the operation. Never give up on first failure.
+5. **Completion Verification**: You must continue your execution loop until you have read the terminal outputs and verified that all tasks succeeded. Once complete, summarize the work done and confirm success.
 
 ## Critical Rules
-- You are a PLANNER, not a shell. NEVER send bash commands like 'ls', 'cat', 'find', 'cd'. Your agents are AI assistants — talk to them in natural language.
-- Each prompt must be ONE LINE, under 200 characters. No newlines, no multi-line text.
-- ALWAYS call send_prompt() immediately after prompt_agent(). The prompt is NOT sent until you call send_prompt.
-- ALWAYS call wait() after send_prompt() before calling observe_agent().
-- If observe_agent returns unchanged output twice, the prompt may not have been received. Re-send it with prompt_agent + send_prompt.
-- If a simple question doesn't need terminal agents, just answer directly without using any tools.`;
+- You are a PLANNER. NEVER send raw bash commands like 'ls', 'cat', 'cd'. Write prompts in natural language.
+- Each prompt must be ONE LINE, under 200 characters. No newlines.
+- ALWAYS call send_prompt() immediately after prompt_agent().
+- ONLY target agent IDs listed in the active Terminal Agents section.
+- If the task is simple and doesn't require terminals, answer directly without tools.`;
 }
 
 const TOOLS_DEFINITION = [
@@ -181,6 +223,7 @@ export function AgentSidebar() {
     : [];
 
   // Auto-scroll to bottom when messages change
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on message count changes
   useEffect(() => {
     if (scrollRef.current) {
       const scrollContainer = scrollRef.current.querySelector(
@@ -192,6 +235,7 @@ export function AgentSidebar() {
     }
   }, [workspaceMessages.length]);
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complex agent execution loop
   const handleSend = async () => {
     if (!(input.trim() && activeWorkspaceId && activeWorkspace)) {
       return;
@@ -203,7 +247,7 @@ export function AgentSidebar() {
     }
 
     const userMessage: AgentMessage = {
-      id: crypto.randomUUID(),
+      id: safeUUID(),
       role: "user",
       content: input,
       timestamp: Date.now(),
@@ -217,8 +261,14 @@ export function AgentSidebar() {
     try {
       abortControllerRef.current = new AbortController();
 
-      const systemPrompt = buildSystemPrompt(activeWorkspace.panes);
+      const targetedPanes =
+        targetTerminalId === "all"
+          ? activeWorkspace.panes
+          : activeWorkspace.panes.filter((p) => p.id === targetTerminalId);
 
+      const systemPrompt = buildSystemPrompt(targetedPanes);
+
+      // biome-ignore lint/suspicious/noExplicitAny: message array matches LLM format
       const currentMessages: any[] = [
         { role: "system", content: systemPrompt },
         ...workspaceMessages.map((m) => ({
@@ -250,7 +300,8 @@ export function AgentSidebar() {
           tools: TOOLS_DEFINITION,
         };
 
-        let data;
+        // biome-ignore lint/suspicious/noExplicitAny: API data object type
+        let data: any;
         if (isTauri) {
           const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
           const res = await tauriFetch(`${baseUrl}/chat/completions`, {
@@ -307,16 +358,20 @@ export function AgentSidebar() {
               if (fnName === "prompt_agent") {
                 const agentId = args.agent_id;
                 const prompt = args.prompt;
-                const panesToRun =
-                  agentId === "all"
+                const targetPanes =
+                  targetTerminalId === "all"
                     ? activeWorkspace.panes
-                    : activeWorkspace.panes.filter((p) => p.id === agentId);
+                    : activeWorkspace.panes.filter(
+                        (p) => p.id === targetTerminalId
+                      );
+
+                const panesToRun = resolveAgentPanes(agentId, targetPanes);
 
                 if (panesToRun.length === 0) {
                   currentMessages.push({
                     role: "tool",
                     tool_call_id: toolCall.id,
-                    content: `Error: No agent found with id "${agentId}". Available agents: ${activeWorkspace.panes.map((p) => p.id).join(", ")}`,
+                    content: `Error: No agent found with id "${agentId}" under the targeted selection. Available agents: ${targetPanes.map((p, i) => `"${p.id}" (Agent ${i + 1})`).join(", ")}`,
                   });
                   continue;
                 }
@@ -341,16 +396,20 @@ export function AgentSidebar() {
                 });
               } else if (fnName === "send_prompt") {
                 const agentId = args.agent_id;
-                const panesToSend =
-                  agentId === "all"
+                const targetPanes =
+                  targetTerminalId === "all"
                     ? activeWorkspace.panes
-                    : activeWorkspace.panes.filter((p) => p.id === agentId);
+                    : activeWorkspace.panes.filter(
+                        (p) => p.id === targetTerminalId
+                      );
+
+                const panesToSend = resolveAgentPanes(agentId, targetPanes);
 
                 if (panesToSend.length === 0) {
                   currentMessages.push({
                     role: "tool",
                     tool_call_id: toolCall.id,
-                    content: `Error: No agent found with id "${agentId}".`,
+                    content: `Error: No agent found with id "${agentId}" under the targeted selection.`,
                   });
                   continue;
                 }
@@ -372,10 +431,29 @@ export function AgentSidebar() {
                 });
               } else if (fnName === "observe_agent") {
                 const agentId = args.agent_id;
+                const targetPanes =
+                  targetTerminalId === "all"
+                    ? activeWorkspace.panes
+                    : activeWorkspace.panes.filter(
+                        (p) => p.id === targetTerminalId
+                      );
+
+                const panesToObserve = resolveAgentPanes(agentId, targetPanes);
+                const pane = panesToObserve[0];
+
+                if (!pane) {
+                  currentMessages.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    content: `Error: No agent found with id "${agentId}" under the targeted selection.`,
+                  });
+                  continue;
+                }
+
                 try {
                   const info: { history: string } = await invoke(
                     "get_terminal_history",
-                    { id: agentId }
+                    { id: pane.id }
                   );
                   const rawOutput = info.history.trim();
 
@@ -393,7 +471,7 @@ export function AgentSidebar() {
                   const truncatedOutput = rawOutput.slice(-MAX_HISTORY_CHARS);
 
                   // Stale-detection
-                  const lastOutput = lastObservedOutput[agentId] ?? "";
+                  const lastOutput = lastObservedOutput[pane.id] ?? "";
                   if (truncatedOutput === lastOutput) {
                     currentMessages.push({
                       role: "tool",
@@ -401,18 +479,19 @@ export function AgentSidebar() {
                       content: `[Output unchanged since last observation. The agent may still be processing, or the prompt was not received. Try waiting longer with wait(15), or re-send the prompt with prompt_agent.]\n\nLast output:\n${truncatedOutput}`,
                     });
                   } else {
-                    lastObservedOutput[agentId] = truncatedOutput;
+                    lastObservedOutput[pane.id] = truncatedOutput;
                     currentMessages.push({
                       role: "tool",
                       tool_call_id: toolCall.id,
                       content: truncatedOutput,
                     });
                   }
-                } catch (e: any) {
+                } catch (e) {
+                  const err = e as Error;
                   currentMessages.push({
                     role: "tool",
                     tool_call_id: toolCall.id,
-                    content: `Error reading agent output: ${e.message || e}`,
+                    content: `Error reading agent output: ${err.message || err}`,
                   });
                 }
               } else if (fnName === "wait") {
@@ -458,20 +537,21 @@ export function AgentSidebar() {
 
       if (finalAgentContent) {
         const agentMessage: AgentMessage = {
-          id: crypto.randomUUID(),
+          id: safeUUID(),
           role: "agent",
           content: finalAgentContent,
           timestamp: Date.now(),
         };
         addMessage(activeWorkspaceId, agentMessage);
       }
-    } catch (error: any) {
-      if (error.name === "AbortError") {
+    } catch (error) {
+      const err = error as Error;
+      if (err.name === "AbortError") {
         console.log("Agent loop aborted by user");
         toast.info("Agent execution stopped.");
       } else {
-        console.error("Failed to execute agent prompt", error);
-        toast.error(error.message || "Failed to communicate with LLM");
+        console.error("Failed to execute agent prompt", err);
+        toast.error(err.message || "Failed to communicate with LLM");
       }
     } finally {
       setIsTyping(false);
