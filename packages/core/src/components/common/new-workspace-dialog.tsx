@@ -15,7 +15,6 @@ import { Label } from "@workspace/ui/components/label";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   FolderOpen,
-  GitBranch,
   History,
   LayoutGrid,
   Sparkles,
@@ -46,10 +45,10 @@ const SUGGESTIONS = [
   "C:\\Users\\hyperion\\dev\\python-agent",
 ];
 
-const AI_MODELS = [
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Recommended)" },
-  { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash (Fast)" },
-  { id: "claude-3.5-sonnet", name: "Claude 3.5 Sonnet" },
+const PREDEFINED_COMMANDS = [
+  "codex running",
+  "claude code",
+  "keyking-claude",
 ];
 
 function getGridClass(count: number): string {
@@ -189,14 +188,9 @@ function WorkspaceLivePreview({ count }: { count: number }) {
   );
 }
 
-const getAiModelLabel = (model: string) => {
-  if (model === "gemini-2.5-pro") {
-    return "Pro";
-  }
-  if (model === "gemini-1.5-flash") {
-    return "Flash";
-  }
-  return "Sonnet";
+const getCommandLabel = (cmd: string) => {
+  if (!cmd) return "None";
+  return cmd.length > 20 ? cmd.substring(0, 18) + "..." : cmd;
 };
 
 export function NewWorkspaceDialog({
@@ -208,8 +202,7 @@ export function NewWorkspaceDialog({
   const [name, setName] = useState("");
   const [terminalCount, setTerminalCount] = useState(4);
   const [directory, setDirectory] = useState("E:\\Hyperion");
-  const [gitEnabled, setGitEnabled] = useState(true);
-  const [aiModel, setAiModel] = useState("gemini-2.5-pro");
+  const [autoCommand, setAutoCommand] = useState("codex running");
   const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
@@ -217,8 +210,7 @@ export function NewWorkspaceDialog({
       setName(`Workspace ${workspaces.length + 1}`);
       setTerminalCount(4);
       setDirectory("E:\\Hyperion");
-      setGitEnabled(true);
-      setAiModel("gemini-2.5-pro");
+      setAutoCommand("codex running");
     }
   }, [open, workspaces.length]);
 
@@ -244,12 +236,30 @@ export function NewWorkspaceDialog({
     }
   };
 
+  const handleSelectDirectory = async () => {
+    try {
+      const { isTauri } = await import("@tauri-apps/api/core");
+      if (isTauri()) {
+        const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
+        const selected = await openDialog({
+          directory: true,
+          multiple: false,
+        });
+        if (selected && typeof selected === "string") {
+          setDirectory(selected);
+        }
+      }
+    } catch (e) {
+      console.error("Error opening dialog", e);
+    }
+  };
+
   const handleCreate = () => {
     const trimmed = name.trim();
     if (!trimmed) {
       return;
     }
-    createWorkspace(trimmed, terminalCount, directory, gitEnabled, aiModel);
+    createWorkspace(trimmed, terminalCount, directory, autoCommand);
     onOpenChange(false);
     onCreated?.();
   };
@@ -327,7 +337,9 @@ export function NewWorkspaceDialog({
                   />
                   <Button
                     className="size-7 text-muted-foreground hover:bg-muted"
+                    onClick={handleSelectDirectory}
                     size="icon"
+                    type="button"
                     variant="ghost"
                   >
                     <FolderOpen className="size-4" />
@@ -398,45 +410,32 @@ export function NewWorkspaceDialog({
               </Label>
               <WorkspaceLivePreview count={terminalCount} />
 
-              {/* Git Checkbox Integration */}
-              <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-background/25 p-2.5">
-                <input
-                  checked={gitEnabled}
-                  className="size-3.5 cursor-pointer rounded border-border/40 bg-background text-primary focus:ring-primary/20"
-                  id="git-init"
-                  onChange={(e) => setGitEnabled(e.target.checked)}
-                  type="checkbox"
-                />
-                <div className="min-w-0 flex-1">
-                  <Label
-                    className="flex cursor-pointer items-center gap-1 font-semibold text-foreground text-xs"
-                    htmlFor="git-init"
-                  >
-                    <GitBranch className="size-3.5 text-muted-foreground" />{" "}
-                    Initialize Git Repository
-                  </Label>
-                  <p className="text-[9px] text-muted-foreground/60">
-                    Detect or scaffold version control.
-                  </p>
-                </div>
-              </div>
-
-              {/* AI Agent Selection */}
+              {/* Auto Command Configuration */}
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1 font-bold text-[10px] text-muted-foreground/80 uppercase tracking-wider">
-                  <Sparkles className="size-3" /> AI Assistant Agent
+                  <Sparkles className="size-3" /> Auto-run Command
                 </Label>
-                <select
-                  className="h-8.5 w-full rounded-lg border border-border/40 bg-[#0b0b0d] px-2 text-muted-foreground text-xs focus:border-primary/50 focus:outline-none"
-                  onChange={(e) => setAiModel(e.target.value)}
-                  value={aiModel}
-                >
-                  {AI_MODELS.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
+                <div className="flex w-full items-center gap-2 rounded-lg border border-border/40 bg-[#0b0b0d] px-2">
+                  <Input
+                    className="h-8.5 flex-1 border-transparent bg-transparent p-0 text-xs text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+                    onChange={(e) => setAutoCommand(e.target.value)}
+                    placeholder="e.g. npm run dev"
+                    value={autoCommand}
+                  />
+                </div>
+                {/* Command Suggestions */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  {PREDEFINED_COMMANDS.map((cmd) => (
+                    <button
+                      className="rounded border border-border/30 bg-muted/20 px-1.5 py-0.5 text-[9px] text-muted-foreground/60 transition-all hover:border-primary/20 hover:text-primary"
+                      key={cmd}
+                      onClick={() => setAutoCommand(cmd)}
+                      type="button"
+                    >
+                      {cmd}
+                    </button>
                   ))}
-                </select>
+                </div>
               </div>
             </div>
 
@@ -456,9 +455,9 @@ export function NewWorkspaceDialog({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span>AI Config:</span>
+                  <span>Auto Cmd:</span>
                   <span className="font-bold font-mono text-foreground">
-                    {getAiModelLabel(aiModel)}
+                    {getCommandLabel(autoCommand)}
                   </span>
                 </div>
               </div>

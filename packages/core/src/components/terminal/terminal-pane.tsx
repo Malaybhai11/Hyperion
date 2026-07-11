@@ -7,6 +7,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface TerminalPaneProps {
+  autoCommand?: string;
+  directory?: string;
   id: string;
   isActiveWorkspace?: boolean;
   title: string;
@@ -76,6 +78,8 @@ function TerminalPlaceholder({ shellType }: { shellType: string }) {
 }
 
 export function TerminalPane({
+  autoCommand,
+  directory,
   id,
   title,
   isActiveWorkspace = true,
@@ -87,6 +91,7 @@ export function TerminalPane({
   const [shellType, setShellType] = useState("Local Shell");
   const [isTauriEnv, setIsTauriEnv] = useState(false);
   const [isTerminalReady, setIsTerminalReady] = useState(false);
+  const autoCommandRunRef = useRef(false);
 
   // Buffer input for mock shell
   const inputBufferRef = useRef("");
@@ -323,6 +328,38 @@ export function TerminalPane({
         const isTauriActive = await setupTauri(term);
         if (!isTauriActive) {
           setupMockShell(term);
+        }
+
+        if (autoCommand && !disposed && !autoCommandRunRef.current) {
+          autoCommandRunRef.current = true;
+          setTimeout(async () => {
+            if (disposed) return;
+            if (isTauriActive) {
+              try {
+                const { invoke } = await import("@tauri-apps/api/core");
+                const lineEnding = navigator.userAgent.includes("Windows") ? "\r" : "\r\n";
+                if (directory) {
+                  const cdCmd = navigator.userAgent.includes("Windows") ? `cd /d "${directory}"` : `cd "${directory}"`;
+                  await invoke("write_terminal", { id, data: cdCmd + lineEnding });
+                  setTimeout(async () => {
+                    if (disposed) return;
+                    await invoke("write_terminal", { id, data: autoCommand + lineEnding });
+                  }, 150);
+                } else {
+                  await invoke("write_terminal", { id, data: autoCommand + lineEnding });
+                }
+              } catch {
+                // ignore
+              }
+            } else {
+              if (directory) {
+                term.write(`cd "${directory}"\r\n`);
+              }
+              term.write(autoCommand + "\r\n");
+              handleMockCommand(autoCommand, term);
+              term.write("\x1b[1;32mhyperion-demo@web:~$\x1b[0m ");
+            }
+          }, 400);
         }
       } catch {
         setupMockShell(term);
