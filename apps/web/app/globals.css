@@ -231,6 +231,64 @@
   }
 }
 
+/* Form field invalid-state shake — a single quick horizontal nudge,
+   not a loop. Consumer toggles the class on and clears it again in
+   onAnimationEnd, so it can be retriggered on repeated failed
+   submits. */
+@keyframes landing-field-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-4px);
+  }
+  40% {
+    transform: translateX(3px);
+  }
+  60% {
+    transform: translateX(-2px);
+  }
+  80% {
+    transform: translateX(1px);
+  }
+}
+
+.landing-field-shake {
+  animation: landing-field-shake 320ms ease-out;
+}
+
+/* Validation helper message — fades and settles in from just below
+   its resting position, once, when it first appears. */
+@keyframes landing-field-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.landing-field-message-in {
+  animation: landing-field-message-in 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-field-shake,
+  .landing-field-message-in {
+    animation: none;
+  }
+}
+
+/* Emphasized easing curve — matches the `emphasized` token in
+   motion-primitives.tsx, for CSS-only transitions (motion.div covers
+   the JS-driven ones) that want the same refined deceleration. */
+.landing-ease-emphasized {
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
 /* Terminal scroll — thin, theme-matched scrollbar for the terminal
    window's internal viewport, both Firefox (scrollbar-color/width)
    and Chromium/WebKit (::-webkit-scrollbar). scroll-behavior:smooth

@@ -4,10 +4,10 @@ import { BorderBeam } from "@workspace/ui/components/landing/border-beam";
 import { Reveal } from "@workspace/ui/components/marketing/reveal";
 import { StarBorder } from "@workspace/ui/components/marketing/StarBorder";
 import { cn } from "@workspace/ui/lib/utils";
-import { Check, Copy, Minus, Plus } from "lucide-react";
+import { AlertCircle, Check, Copy, Minus, Plus } from "lucide-react";
 import { motion, useScroll } from "motion/react";
 import type * as React from "react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Terminal } from "./terminal";
 
 /* ─────────────────────────────────────────────────────────────
@@ -297,58 +297,216 @@ export function ScrollProgress() {
   );
 }
 
-/** Dark text input with accent focus ring. */
+/** Shared field-shell classes — hover glow, focus glow, validation
+ *  borders. Same footprint (height/radius/padding) as before; only
+ *  transitions and states are new. */
+const fieldShellClasses = (invalid?: boolean, valid?: boolean) =>
+  cn(
+    "peer w-full rounded-lg border bg-background/60 px-4 text-foreground text-sm placeholder:text-transparent",
+    "transition-[border-color,background-color,box-shadow] duration-200 ease-out",
+    "hover:border-border/80 hover:bg-background/70 hover:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-border)_60%,transparent)]",
+    "focus:border-primary/60 focus:bg-background/70 focus:outline-none focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-primary)_16%,transparent)]",
+    invalid
+      ? "border-[#c98a7f]/70 focus:border-[#c98a7f]/70 focus:shadow-[0_0_0_3px_color-mix(in_oklab,#c98a7f_16%,transparent)]"
+      : "border-border",
+    valid && "border-[#8bbf93]/70"
+  );
+
+/** Notched floating label — sits centered inside the field like a
+ *  placeholder at rest, then on focus/filled lifts to straddle the
+ *  field's top border with a background patch behind it (so it reads
+ *  as a cut in the border, not overlapping text), Material/Linear
+ *  style. `top` is the rest-state vertical center as a CSS length
+ *  (differs between the fixed-height Input and the top-anchored
+ *  Textarea). */
+function FloatingLabel({
+  htmlFor,
+  children,
+  floated,
+  top,
+}: {
+  htmlFor: string;
+  children: React.ReactNode;
+  floated: boolean;
+  top: string;
+}) {
+  return (
+    <label
+      className={cn(
+        "pointer-events-none absolute left-3.5 origin-left whitespace-nowrap font-medium transition-[transform,color,top] duration-[220ms] ease-in-out",
+        floated
+          ? "-translate-y-1/2 rounded bg-background px-1 text-primary/90 text-[0.8125rem]"
+          : "-translate-y-1/2 text-foreground/80 text-sm peer-hover:text-foreground/90"
+      )}
+      htmlFor={htmlFor}
+      style={{ top: floated ? 0 : top }}
+    >
+      {children}
+    </label>
+  );
+}
+
+/** Small inline validation message — fades/slides in once. */
+function FieldMessage({ invalid, message }: { invalid?: boolean; message?: string }) {
+  if (!message) {
+    return null;
+  }
+  return (
+    <p
+      className={cn(
+        "landing-field-message-in flex items-center gap-1 text-xs",
+        invalid ? "text-[#c98a7f]" : "text-[#8bbf93]"
+      )}
+    >
+      {invalid ? (
+        <AlertCircle className="size-3 shrink-0" />
+      ) : (
+        <Check className="size-3 shrink-0" />
+      )}
+      {message}
+    </p>
+  );
+}
+
+/** Dark text input — floating label, hover/focus micro-glow, optional
+ *  validation state. Same height/radius/spacing as before. */
 export function Input({
   className,
   label,
   id,
+  invalid,
+  valid,
+  message,
+  onFocus,
+  onBlur,
+  onChange,
   ...props
-}: React.ComponentProps<"input"> & { label?: string }) {
+}: React.ComponentProps<"input"> & {
+  label?: string;
+  invalid?: boolean;
+  valid?: boolean;
+  message?: string;
+}) {
+  const autoId = useId();
+  const fieldId = id ?? autoId;
+  const [focused, setFocused] = useState(false);
+  const [hasValue, setHasValue] = useState(
+    Boolean(props.defaultValue ?? props.value)
+  );
+  const [shake, setShake] = useState(false);
+
   return (
     <div className="space-y-1.5">
-      {label && (
-        <label className="font-medium text-foreground/80 text-sm" htmlFor={id}>
-          {label}
-        </label>
-      )}
-      <input
-        className={cn(
-          "h-11 w-full rounded-lg border border-border bg-background/60 px-4 text-foreground text-sm placeholder:text-muted-foreground",
-          "transition-colors duration-150 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/20",
-          className
+      <div className="relative">
+        <input
+          className={cn(
+            fieldShellClasses(invalid, valid),
+            "h-11",
+            shake && "landing-field-shake",
+            className
+          )}
+          data-slot="marketing-input"
+          id={fieldId}
+          onAnimationEnd={() => setShake(false)}
+          onBlur={(e) => {
+            setFocused(false);
+            onBlur?.(e);
+          }}
+          onChange={(e) => {
+            setHasValue(e.currentTarget.value.length > 0);
+            onChange?.(e);
+          }}
+          onFocus={(e) => {
+            setFocused(true);
+            onFocus?.(e);
+          }}
+          {...props}
+        />
+        {label && (
+          <FloatingLabel
+            floated={focused || hasValue}
+            htmlFor={fieldId}
+            top="50%"
+          >
+            {label}
+          </FloatingLabel>
         )}
-        data-slot="marketing-input"
-        id={id}
-        {...props}
-      />
+        {invalid && (
+          <AlertCircle className="-translate-y-1/2 pointer-events-none absolute top-1/2 right-3.5 size-4 text-[#c98a7f]" />
+        )}
+        {valid && !invalid && (
+          <Check className="-translate-y-1/2 pointer-events-none absolute top-1/2 right-3.5 size-4 text-[#8bbf93]" />
+        )}
+      </div>
+      <FieldMessage invalid={invalid} message={message} />
     </div>
   );
 }
 
-/** Dark textarea with accent focus ring. */
+/** Dark textarea — same treatment as Input, floating label included. */
 export function Textarea({
   className,
   label,
   id,
+  invalid,
+  valid,
+  message,
+  onFocus,
+  onBlur,
+  onChange,
   ...props
-}: React.ComponentProps<"textarea"> & { label?: string }) {
+}: React.ComponentProps<"textarea"> & {
+  label?: string;
+  invalid?: boolean;
+  valid?: boolean;
+  message?: string;
+}) {
+  const autoId = useId();
+  const fieldId = id ?? autoId;
+  const [focused, setFocused] = useState(false);
+  const [hasValue, setHasValue] = useState(
+    Boolean(props.defaultValue ?? props.value)
+  );
+  const [shake, setShake] = useState(false);
+
   return (
     <div className="space-y-1.5">
-      {label && (
-        <label className="font-medium text-foreground/80 text-sm" htmlFor={id}>
-          {label}
-        </label>
-      )}
-      <textarea
-        className={cn(
-          "min-h-[120px] w-full rounded-lg border border-border bg-background/60 px-4 py-3 text-foreground text-sm placeholder:text-muted-foreground",
-          "transition-colors duration-150 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/20",
-          className
+      <div className="relative">
+        <textarea
+          className={cn(
+            fieldShellClasses(invalid, valid),
+            "min-h-[120px] py-3",
+            shake && "landing-field-shake",
+            className
+          )}
+          data-slot="marketing-textarea"
+          id={fieldId}
+          onAnimationEnd={() => setShake(false)}
+          onBlur={(e) => {
+            setFocused(false);
+            onBlur?.(e);
+          }}
+          onChange={(e) => {
+            setHasValue(e.currentTarget.value.length > 0);
+            onChange?.(e);
+          }}
+          onFocus={(e) => {
+            setFocused(true);
+            onFocus?.(e);
+          }}
+          {...props}
+        />
+        {label && (
+          <FloatingLabel
+            floated={focused || hasValue}
+            htmlFor={fieldId}
+            top="1.375rem"
+          >
+            {label}
+          </FloatingLabel>
         )}
-        data-slot="marketing-textarea"
-        id={id}
-        {...props}
-      />
+      </div>
+      <FieldMessage invalid={invalid} message={message} />
     </div>
   );
 }
