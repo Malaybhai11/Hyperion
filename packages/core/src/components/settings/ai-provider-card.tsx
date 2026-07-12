@@ -37,6 +37,12 @@ import {
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+function combineUrl(baseUrl: string, path: string): string {
+  const cleanBase = baseUrl.trim().endsWith("/") ? baseUrl.trim().slice(0, -1) : baseUrl.trim();
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return `${cleanBase}${cleanPath}`;
+}
+
 export function AiProviderCard() {
   const {
     apiKey,
@@ -111,7 +117,7 @@ export function AiProviderCard() {
 
       if (isTauri) {
         const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
-        response = await tauriFetch(`${baseUrl}/models`, {
+        response = await tauriFetch(combineUrl(baseUrl, "models"), {
           method: "GET",
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -127,7 +133,7 @@ export function AiProviderCard() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            url: `${baseUrl}/models`,
+            url: combineUrl(baseUrl, "models"),
             method: "GET",
             headers: { Authorization: `Bearer ${apiKey}` },
           }),

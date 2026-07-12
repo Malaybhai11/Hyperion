@@ -1,4 +1,5 @@
 mod terminal;
+mod ai;
 
 use serde::Serialize;
 
@@ -31,7 +32,8 @@ pub fn run() {
       terminal::write_terminal,
       terminal::resize_terminal,
       terminal::get_terminal_history,
-      terminal::close_terminal
+      terminal::close_terminal,
+      ai::call_llm_stream
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
