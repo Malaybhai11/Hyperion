@@ -1,6 +1,7 @@
 "use client";
 
 import { safeUUID } from "@workspace/core/lib/uuid";
+import { ProviderFactory } from "@workspace/core/lib/providers/provider-factory";
 import {
   type AgentMessage,
   useAgentStore,
@@ -8,6 +9,7 @@ import {
 import { useWorkspaceStore } from "@workspace/core/stores/workspace-store";
 import { Button } from "@workspace/ui/components/button";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
+import { Textarea } from "@workspace/ui/components/textarea";
 import {
   Select,
   SelectContent,
@@ -15,7 +17,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@workspace/ui/components/select";
-import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Loader2,
@@ -25,6 +26,10 @@ import {
   TerminalSquare,
   User,
   X,
+  Check,
+  Edit2,
+  Play,
+  RotateCcw,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
@@ -79,12 +84,32 @@ function resolveAgentPanes(
   return [];
 }
 
-function buildSystemPrompt(panes: { id: string; title: string }[]): string {
+function buildPlanningSystemPrompt(panes: { id: string; title: string }[]): string {
   const agentList = panes
     .map((p, i) => `  - Agent ${i + 1}: id="${p.id}" (${p.title})`)
     .join("\n");
 
-  return `You are the Hyperion Main Agent — an elite Autonomous Workspace Orchestrator. You coordinate multiple terminal sessions to accomplish complex, multi-step engineering tasks.
+  return `You are the Hyperion Orchestrator Planner. Your task is to analyze the user request and generate a structured execution plan.
+You have ${panes.length} terminal agents:
+${agentList}
+
+Generate a clear, bulleted plan showing which terminal agent will perform what actions. Break down the tasks logically and ensure there are no overlapping tasks. Do not call any tools.`;
+}
+
+function buildExecutionSystemPrompt(
+  panes: { id: string; title: string }[],
+  approvedPlan?: string
+): string {
+  const agentList = panes
+    .map((p, i) => `  - Agent ${i + 1}: id="${p.id}" (${p.title})`)
+    .join("\n");
+
+  let planSection = "";
+  if (approvedPlan) {
+    planSection = `\n## Approved Plan to Follow\n${approvedPlan}\n`;
+  }
+
+  return `You are the Hyperion Main Agent — an elite Autonomous Workspace Orchestrator. You coordinate multiple terminal sessions to accomplish complex, multi-step engineering tasks.${planSection}
 
 ## Your Terminal Agents
 You have ${panes.length} AI coding assistants (e.g. Claude Code) running in separate terminals:
@@ -97,15 +122,11 @@ ${agentList}
 4. wait(seconds) — Pause for 1-30 seconds. ALWAYS wait 5-15 seconds after submitting a prompt before observing.
 
 ## Coordination & Orchestration Rules (STRICTLY enforced)
-1. **Multi-Terminal Coordination**: You can orchestrate multiple terminals at once. For example, you can launch a dev server on Agent 1, and run tests/linters on Agent 2. Make sure you track the role and progress of each session.
+1. **Multi-Terminal Coordination**: You can orchestrate multiple terminals at once. Make sure you track the role and progress of each session.
 2. **Context Preservation**: Always remember what task you assigned to each terminal. Treat the terminals as your team of developers.
 3. **Stall & Progress Monitoring**: After submitting a prompt, you MUST call wait(10) then observe_agent(agent_id).
-   - If the terminal output shows the task is still running (e.g. download in progress, server starting, build running), do NOT stop. Call wait(10) and observe_agent again. Repeat until it finishes.
    - If the output is unchanged twice in a row, the terminal might be stuck or command was not submitted. Re-type and re-submit the prompt.
-4. **Auto-Recovery & Retries**: If a terminal command fails or returns an error:
-   - Analyze the error.
-   - Send a follow-up corrective prompt to that terminal (or another helper terminal) to resolve the issue (e.g. run "npm install" for missing dependencies, adjust config settings).
-   - Retry the operation. Never give up on first failure.
+4. **Auto-Recovery & Retries**: If a terminal command fails, analyze the error, send a follow-up corrective prompt, and retry. Never give up on first failure.
 5. **Completion Verification**: You must continue your execution loop until you have read the terminal outputs and verified that all tasks succeeded. Once complete, summarize the work done and confirm success.
 
 ## Critical Rules
@@ -128,13 +149,11 @@ const TOOLS_DEFINITION = [
         properties: {
           agent_id: {
             type: "string",
-            description:
-              "The agent ID from the list, or 'all' to prompt every agent.",
+            description: "The agent ID from the list, or 'all' to prompt every agent.",
           },
           prompt: {
             type: "string",
-            description:
-              "A short, single-line natural language instruction (under 200 chars, no newlines).",
+            description: "A short, single-line natural language instruction (under 200 chars, no newlines).",
           },
         },
         required: ["agent_id", "prompt"],
@@ -152,8 +171,7 @@ const TOOLS_DEFINITION = [
         properties: {
           agent_id: {
             type: "string",
-            description:
-              "The agent ID to press Enter on, or 'all' to submit on all agents.",
+            description: "The agent ID to press Enter on, or 'all' to submit on all agents.",
           },
         },
         required: ["agent_id"],
@@ -204,9 +222,13 @@ export function AgentSidebar() {
     toggleOpen,
     messages,
     addMessage,
+    upsertMessage,
     apiKey,
     baseUrl,
     selectedModel,
+    provider,
+    setTerminalState,
+    addLog,
   } = useAgentStore();
   const { activeWorkspaceId, workspaces } = useWorkspaceStore();
 
@@ -217,13 +239,18 @@ export function AgentSidebar() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Planner states
+  const [plannerState, setPlannerState] = useState<"idle" | "planning" | "executing">("idle");
+  const [currentPlan, setCurrentPlan] = useState("");
+  const [isEditingPlan, setIsEditingPlan] = useState(false);
+  const [editedPlanText, setEditedPlanText] = useState("");
+  const [planMessageId, setPlanMessageId] = useState("");
+
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const workspaceMessages = activeWorkspaceId
     ? (messages[activeWorkspaceId] ?? [])
     : [];
 
-  // Auto-scroll to bottom when messages change
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on message count changes
   useEffect(() => {
     if (scrollRef.current) {
       const scrollContainer = scrollRef.current.querySelector(
@@ -233,11 +260,39 @@ export function AgentSidebar() {
         scrollContainer.scrollTop = scrollContainer.scrollHeight;
       }
     }
-  }, [workspaceMessages.length]);
+  }, [workspaceMessages.length, isTyping, plannerState]);
 
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complex agent execution loop
+  const handleDetailedError = (error: any, source: "frontend" | "backend" | "ipc" | "api" | "planner" | "terminal", requestId: string) => {
+    const msg = error.message || String(error);
+    let reason = "Unknown error";
+    let suggestion = "Please try again or check the system status.";
+
+    if (msg.includes("401") || msg.includes("Unauthorized")) {
+      reason = "Authentication failed (API key is invalid or missing)";
+      suggestion = "Go to Settings and check your AI Provider API Key and Base URL.";
+    } else if (msg.includes("404") || msg.includes("Not Found")) {
+      reason = "Endpoint or model not found";
+      suggestion = "Check that your Base URL is correct and the selected model exists.";
+    } else if (msg.includes("Failed to fetch") || msg.includes("network")) {
+      reason = "Network connection issue";
+      suggestion = "Verify your internet connection and verify if the API provider is online.";
+    } else if (msg.includes("timeout")) {
+      reason = "Request timed out";
+      suggestion = "The provider is taking too long to respond. Try again or select a faster model.";
+    } else if (msg.includes("Tauri") || msg.includes("invoke")) {
+      reason = "IPC bridge communication failure";
+      suggestion = "Restart the application and ensure Tauri services are running.";
+    }
+
+    const fullErrorMessage = `Error Source: ${source.toUpperCase()}\nReason: ${reason}\nDetails: ${msg}\n\nRecovery Suggestion: ${suggestion}`;
+    addLog(source, "error", fullErrorMessage, requestId);
+    toast.error(`Error: ${reason}`);
+    return { reason, suggestion, fullErrorMessage };
+  };
+
   const handleSend = async () => {
-    if (!(input.trim() && activeWorkspaceId && activeWorkspace)) {
+    const workspaceId = activeWorkspaceId;
+    if (!(input.trim() && workspaceId && activeWorkspace)) {
       return;
     }
 
@@ -246,6 +301,7 @@ export function AgentSidebar() {
       return;
     }
 
+    const requestId = `req-${safeUUID().slice(0, 8)}`;
     const userMessage: AgentMessage = {
       id: safeUUID(),
       role: "user",
@@ -253,96 +309,168 @@ export function AgentSidebar() {
       timestamp: Date.now(),
     };
 
-    addMessage(activeWorkspaceId, userMessage);
+    addMessage(workspaceId, userMessage);
+    const userPrompt = input;
     setInput("");
     setIsTyping(true);
-    setIterationCount(0);
+    setPlannerState("planning");
+    addLog("planner", "info", `Initializing task analysis for prompt: "${userPrompt}"`, requestId);
+
+    // Initialize Plan message slot
+    const planMsgId = safeUUID();
+    setPlanMessageId(planMsgId);
 
     try {
       abortControllerRef.current = new AbortController();
-
       const targetedPanes =
         targetTerminalId === "all"
           ? activeWorkspace.panes
           : activeWorkspace.panes.filter((p) => p.id === targetTerminalId);
 
-      const systemPrompt = buildSystemPrompt(targetedPanes);
+      // Generate Plan
+      addLog("api", "info", "Requesting complexity analysis and execution plan from provider", requestId);
+      const providerInstance = ProviderFactory.getProvider(provider);
+      providerInstance.initialize(apiKey, baseUrl, selectedModel);
 
-      // biome-ignore lint/suspicious/noExplicitAny: message array matches LLM format
+      const planningPrompt = buildPlanningSystemPrompt(targetedPanes);
+
+      // Stream the plan response
+      let planContent = "";
+      const streamPromise = providerInstance.stream(
+        [
+          { role: "system", content: planningPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        [],
+        (delta) => {
+          if (delta.content) {
+            planContent += delta.content;
+            upsertMessage(workspaceId, {
+              id: planMsgId,
+              role: "agent",
+              content: planContent,
+              timestamp: Date.now(),
+            });
+          }
+        },
+        abortControllerRef.current.signal
+      );
+
+      await streamPromise;
+
+      setCurrentPlan(planContent);
+      setEditedPlanText(planContent);
+      addLog("planner", "info", "Orchestration plan generated successfully", requestId);
+    } catch (error: any) {
+      if (error.name === "AbortError" || abortControllerRef.current?.signal.aborted) {
+        addLog("planner", "warn", "Planning cancelled by user", requestId);
+        toast.info("Planning cancelled.");
+        setPlannerState("idle");
+      } else {
+        const { fullErrorMessage } = handleDetailedError(error, "planner", requestId);
+        upsertMessage(workspaceId, {
+          id: planMsgId,
+          role: "agent",
+          content: `⚠️ Failed to generate plan.\n\n${fullErrorMessage}`,
+          timestamp: Date.now(),
+        });
+        setPlannerState("idle");
+      }
+      setIsTyping(false);
+    }
+  };
+
+  const executePlan = async (approvedPlan?: string) => {
+    const workspaceId = activeWorkspaceId;
+    if (!workspaceId || !activeWorkspace) return;
+    const requestId = `req-${safeUUID().slice(0, 8)}`;
+    setPlannerState("executing");
+    setIsTyping(true);
+    setIterationCount(0);
+    addLog("planner", "info", "Starting execution of the approved orchestration loop", requestId);
+
+    // Set targeted terminal states to Planning initially
+    const targetedPanes =
+      targetTerminalId === "all"
+        ? activeWorkspace.panes
+        : activeWorkspace.panes.filter((p) => p.id === targetTerminalId);
+
+    for (const p of targetedPanes) {
+      setTerminalState(p.id, "Planning");
+    }
+
+    const execMsgId = safeUUID();
+    let accumulatedAgentContent = "";
+
+    try {
+      abortControllerRef.current = new AbortController();
+      const systemPrompt = buildExecutionSystemPrompt(targetedPanes, approvedPlan);
+
       const currentMessages: any[] = [
         { role: "system", content: systemPrompt },
         ...workspaceMessages.map((m) => ({
           role: m.role === "agent" ? "assistant" : m.role,
           content: m.content,
         })),
-        { role: "user", content: userMessage.content },
       ];
 
       let isFinished = false;
-      const isTauri =
-        typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-      let finalAgentContent = "";
       let iterations = 0;
       const lastObservedOutput: Record<string, string> = {};
+      const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+      const providerInstance = ProviderFactory.getProvider(provider);
+      providerInstance.initialize(apiKey, baseUrl, selectedModel);
 
       while (!isFinished && iterations < MAX_ITERATIONS) {
         iterations++;
         setIterationCount(iterations);
 
-        // Check if aborted
         if (abortControllerRef.current?.signal.aborted) {
+          addLog("planner", "warn", "Execution loop aborted", requestId);
           break;
         }
 
-        const requestBody = {
-          model: selectedModel,
-          messages: currentMessages,
-          tools: TOOLS_DEFINITION,
+        // Set running state on terminals
+        for (const p of targetedPanes) {
+          setTerminalState(p.id, "Running");
+        }
+
+        addLog("api", "info", `Step ${iterations}: Requesting orchestration delta from provider`, requestId);
+
+        let stepContent = "";
+        let accumulatedDelta: any = null;
+
+        const streamResult = await providerInstance.stream(
+          currentMessages,
+          TOOLS_DEFINITION,
+          (delta) => {
+            if (delta.content) {
+              stepContent += delta.content;
+              accumulatedAgentContent += delta.content;
+              upsertMessage(workspaceId, {
+                id: execMsgId,
+                role: "agent",
+                content: accumulatedAgentContent,
+                timestamp: Date.now(),
+              });
+            }
+            if (delta.toolCalls) {
+              accumulatedDelta = accumulatedDelta || {};
+              accumulatedDelta.tool_calls = delta.toolCalls;
+            }
+          },
+          abortControllerRef.current.signal
+        );
+
+        const message = {
+          role: "assistant",
+          content: streamResult.content,
+          tool_calls: streamResult.tool_calls,
         };
 
-        // biome-ignore lint/suspicious/noExplicitAny: API data object type
-        let data: any;
-        if (isTauri) {
-          const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
-          const res = await tauriFetch(`${baseUrl}/chat/completions`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify(requestBody),
-            signal: abortControllerRef.current?.signal,
-          });
-          if (!res.ok) {
-            throw new Error(`API Error: ${res.status}`);
-          }
-          data = await res.json();
-        } else {
-          const res = await fetch("/api/proxy", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              url: `${baseUrl}/chat/completions`,
-              method: "POST",
-              headers: { Authorization: `Bearer ${apiKey}` },
-              body: requestBody,
-            }),
-            signal: abortControllerRef.current?.signal,
-          });
-          if (!res.ok) {
-            throw new Error(`Proxy API Error: ${res.status}`);
-          }
-          data = await res.json();
-        }
-
-        const message = data.choices?.[0]?.message;
-        if (!message) {
-          throw new Error("No message returned from API.");
-        }
-
         if (message.content) {
-          finalAgentContent +=
-            (finalAgentContent ? "\n" : "") + message.content;
+          accumulatedAgentContent += (accumulatedAgentContent ? "\n" : "") + message.content;
         }
 
         if (message.tool_calls && message.tool_calls.length > 0) {
@@ -355,128 +483,109 @@ export function AgentSidebar() {
               const fnName = toolCall.function.name;
               const args = JSON.parse(toolCall.function.arguments);
 
+              addLog("ipc", "info", `Executing tool call: ${fnName} (${JSON.stringify(args)})`, requestId);
+
               if (fnName === "prompt_agent") {
                 const agentId = args.agent_id;
-                const prompt = args.prompt;
-                const targetPanes =
-                  targetTerminalId === "all"
-                    ? activeWorkspace.panes
-                    : activeWorkspace.panes.filter(
-                        (p) => p.id === targetTerminalId
-                      );
-
-                const panesToRun = resolveAgentPanes(agentId, targetPanes);
+                const promptContent = args.prompt;
+                const panesToRun = resolveAgentPanes(agentId, targetedPanes);
 
                 if (panesToRun.length === 0) {
                   currentMessages.push({
                     role: "tool",
                     tool_call_id: toolCall.id,
-                    content: `Error: No agent found with id "${agentId}" under the targeted selection. Available agents: ${targetPanes.map((p, i) => `"${p.id}" (Agent ${i + 1})`).join(", ")}`,
+                    content: `Error: No agent found with id "${agentId}".`,
                   });
                   continue;
                 }
 
-                // Clean: strip newlines, trim, cap length
-                const cleanPrompt = prompt
-                  .replace(/[\n\r]/g, " ")
-                  .trim()
-                  .slice(0, 500);
+                const cleanPrompt = promptContent.replace(/[\n\r]/g, " ").trim().slice(0, 500);
 
                 for (const pane of panesToRun) {
-                  await invoke("write_terminal", {
-                    id: pane.id,
-                    data: cleanPrompt,
-                  });
+                  setTerminalState(pane.id, "Running");
+                  let retries = 3;
+                  let success = false;
+                  while (retries > 0 && !success) {
+                    try {
+                      await invoke("write_terminal", { id: pane.id, data: cleanPrompt });
+                      success = true;
+                      addLog("terminal", "info", `Prompt typed into terminal: ${pane.title}`, requestId);
+                    } catch (err) {
+                      retries--;
+                      addLog("terminal", "warn", `Retrying write_terminal: ${pane.title} (${retries} attempts left)`, requestId);
+                      if (retries === 0) throw err;
+                      await sleep(500);
+                    }
+                  }
                 }
 
                 currentMessages.push({
                   role: "tool",
                   tool_call_id: toolCall.id,
-                  content: `Prompt typed into ${panesToRun.length} agent(s). Now call send_prompt() to press Enter and submit it.`,
+                  content: `Prompt typed into ${panesToRun.length} agent(s). Call send_prompt() to submit.`,
                 });
               } else if (fnName === "send_prompt") {
                 const agentId = args.agent_id;
-                const targetPanes =
-                  targetTerminalId === "all"
-                    ? activeWorkspace.panes
-                    : activeWorkspace.panes.filter(
-                        (p) => p.id === targetTerminalId
-                      );
-
-                const panesToSend = resolveAgentPanes(agentId, targetPanes);
+                const panesToSend = resolveAgentPanes(agentId, targetedPanes);
 
                 if (panesToSend.length === 0) {
                   currentMessages.push({
                     role: "tool",
                     tool_call_id: toolCall.id,
-                    content: `Error: No agent found with id "${agentId}" under the targeted selection.`,
+                    content: `Error: No agent found with id "${agentId}".`,
                   });
                   continue;
                 }
 
-                // Small delay to let the terminal process the typed text
                 await sleep(200);
 
                 for (const pane of panesToSend) {
-                  await invoke("write_terminal", {
-                    id: pane.id,
-                    data: "\r",
-                  });
+                  setTerminalState(pane.id, "Running");
+                  await invoke("write_terminal", { id: pane.id, data: "\r" });
+                  addLog("terminal", "info", `Submitted prompt (pressed enter) on terminal: ${pane.title}`, requestId);
                 }
 
                 currentMessages.push({
                   role: "tool",
                   tool_call_id: toolCall.id,
-                  content: `Enter pressed on ${panesToSend.length} agent(s). Prompt submitted. Now call wait(10) then observe_agent() to check the response.`,
+                  content: `Submit action complete. Wait and observe output using observe_agent.`,
                 });
               } else if (fnName === "observe_agent") {
                 const agentId = args.agent_id;
-                const targetPanes =
-                  targetTerminalId === "all"
-                    ? activeWorkspace.panes
-                    : activeWorkspace.panes.filter(
-                        (p) => p.id === targetTerminalId
-                      );
-
-                const panesToObserve = resolveAgentPanes(agentId, targetPanes);
+                const panesToObserve = resolveAgentPanes(agentId, targetedPanes);
                 const pane = panesToObserve[0];
 
                 if (!pane) {
                   currentMessages.push({
                     role: "tool",
                     tool_call_id: toolCall.id,
-                    content: `Error: No agent found with id "${agentId}" under the targeted selection.`,
+                    content: `Error: No agent found with id "${agentId}".`,
                   });
                   continue;
                 }
 
+                setTerminalState(pane.id, "Streaming");
                 try {
-                  const info: { history: string } = await invoke(
-                    "get_terminal_history",
-                    { id: pane.id }
-                  );
+                  const info: { history: string } = await invoke("get_terminal_history", { id: pane.id });
                   const rawOutput = info.history.trim();
 
                   if (!rawOutput) {
                     currentMessages.push({
                       role: "tool",
                       tool_call_id: toolCall.id,
-                      content:
-                        "[Terminal output is empty. The agent may not have started yet. Try waiting longer.]",
+                      content: "[Terminal output is empty. Try waiting longer.]",
                     });
                     continue;
                   }
 
-                  // Truncate to last N chars to avoid context bloat
                   const truncatedOutput = rawOutput.slice(-MAX_HISTORY_CHARS);
-
-                  // Stale-detection
                   const lastOutput = lastObservedOutput[pane.id] ?? "";
+
                   if (truncatedOutput === lastOutput) {
                     currentMessages.push({
                       role: "tool",
                       tool_call_id: toolCall.id,
-                      content: `[Output unchanged since last observation. The agent may still be processing, or the prompt was not received. Try waiting longer with wait(15), or re-send the prompt with prompt_agent.]\n\nLast output:\n${truncatedOutput}`,
+                      content: `[Output unchanged. Still processing.]\n\nLast output:\n${truncatedOutput}`,
                     });
                   } else {
                     lastObservedOutput[pane.id] = truncatedOutput;
@@ -486,19 +595,20 @@ export function AgentSidebar() {
                       content: truncatedOutput,
                     });
                   }
-                } catch (e) {
-                  const err = e as Error;
+                  addLog("terminal", "info", `Observed output from terminal: ${pane.title}`, requestId);
+                } catch (e: any) {
                   currentMessages.push({
                     role: "tool",
                     tool_call_id: toolCall.id,
-                    content: `Error reading agent output: ${err.message || err}`,
+                    content: `Error reading agent output: ${e.message || e}`,
                   });
                 }
               } else if (fnName === "wait") {
-                const seconds = Math.min(
-                  30,
-                  Math.max(1, Number(args.seconds) || 5)
-                );
+                const seconds = Math.min(30, Math.max(1, Number(args.seconds) || 5));
+                addLog("planner", "info", `Waiting for ${seconds} seconds...`, requestId);
+                for (const p of targetedPanes) {
+                  setTerminalState(p.id, "Waiting");
+                }
                 await sleep(seconds * 1000);
                 currentMessages.push({
                   role: "tool",
@@ -514,13 +624,12 @@ export function AgentSidebar() {
               }
             }
           } else {
-            // Not in Tauri, simulate tool success
+            // Not in Tauri, simulate tool execution success
             for (const toolCall of message.tool_calls) {
               currentMessages.push({
                 role: "tool",
                 tool_call_id: toolCall.id,
-                content:
-                  "Simulated tool execution (Native terminal tools not available in browser)",
+                content: "Simulated execution success (Native terminals unavailable in browser)",
               });
             }
             isFinished = true;
@@ -531,32 +640,45 @@ export function AgentSidebar() {
       }
 
       if (iterations >= MAX_ITERATIONS) {
-        finalAgentContent +=
-          "\n\n⚠️ Reached maximum iteration limit (20). Stopping execution.";
+        accumulatedAgentContent += "\n\n⚠️ Reached maximum loop iteration limit. Stopping execution.";
+        upsertMessage(workspaceId, {
+          id: execMsgId,
+          role: "agent",
+          content: accumulatedAgentContent,
+          timestamp: Date.now(),
+        });
       }
 
-      if (finalAgentContent) {
-        const agentMessage: AgentMessage = {
-          id: safeUUID(),
-          role: "agent",
-          content: finalAgentContent,
-          timestamp: Date.now(),
-        };
-        addMessage(activeWorkspaceId, agentMessage);
+      // Mark terminals as completed
+      for (const p of targetedPanes) {
+        setTerminalState(p.id, "Completed");
       }
-    } catch (error) {
-      const err = error as Error;
-      if (err.name === "AbortError") {
-        console.log("Agent loop aborted by user");
-        toast.info("Agent execution stopped.");
+      addLog("planner", "info", "Autonomous loop executed successfully", requestId);
+    } catch (error: any) {
+      if (error.name === "AbortError" || abortControllerRef.current?.signal.aborted) {
+        addLog("planner", "warn", "Execution loop cancelled by user", requestId);
+        toast.info("Execution cancelled.");
+        for (const p of targetedPanes) {
+          setTerminalState(p.id, "Cancelled");
+        }
       } else {
-        console.error("Failed to execute agent prompt", err);
-        toast.error(err.message || "Failed to communicate with LLM");
+        const { fullErrorMessage } = handleDetailedError(error, "planner", requestId);
+        accumulatedAgentContent += `\n\n⚠️ Execution Error:\n${fullErrorMessage}`;
+        upsertMessage(workspaceId, {
+          id: execMsgId,
+          role: "agent",
+          content: accumulatedAgentContent,
+          timestamp: Date.now(),
+        });
+        for (const p of targetedPanes) {
+          setTerminalState(p.id, "Failed");
+        }
       }
     } finally {
       setIsTyping(false);
       setIterationCount(0);
       abortControllerRef.current = null;
+      setPlannerState("idle");
     }
   };
 
@@ -565,6 +687,20 @@ export function AgentSidebar() {
       abortControllerRef.current.abort();
     }
     setIsTyping(false);
+    setPlannerState("idle");
+  };
+
+  const saveEditedPlan = () => {
+    const workspaceId = activeWorkspaceId;
+    if (!workspaceId) return;
+    setIsEditingPlan(false);
+    setCurrentPlan(editedPlanText);
+    upsertMessage(workspaceId, {
+      id: planMessageId,
+      role: "agent",
+      content: editedPlanText,
+      timestamp: Date.now(),
+    });
   };
 
   return (
@@ -608,8 +744,7 @@ export function AgentSidebar() {
                     <p className="text-sm">
                       I'm your Main Agent.
                       <br />
-                      Ask me to plan and execute tasks across your AI terminal
-                      agents.
+                      Ask me to plan and execute tasks across your AI terminal agents.
                     </p>
                   </div>
                 ) : (
@@ -635,17 +770,76 @@ export function AgentSidebar() {
                           <Sparkles className="size-4" />
                         )}
                       </div>
-                      <div
-                        className={cn(
-                          "flex flex-col gap-1 rounded-2xl px-4 py-3",
-                          msg.role === "user"
-                            ? "rounded-tr-sm bg-primary text-primary-foreground"
-                            : "rounded-tl-sm border border-border/40 bg-muted/60 text-foreground"
+                      <div className="flex flex-col gap-1.5 max-w-[80%]">
+                        <div
+                          className={cn(
+                            "flex flex-col gap-1 rounded-2xl px-4 py-3",
+                            msg.role === "user"
+                              ? "rounded-tr-sm bg-primary text-primary-foreground"
+                              : "rounded-tl-sm border border-border/40 bg-muted/60 text-foreground"
+                          )}
+                        >
+                          {msg.id === planMessageId && isEditingPlan ? (
+                            <div className="flex flex-col gap-2">
+                              <Textarea
+                                className="min-h-[140px] w-[260px] text-xs font-mono"
+                                onChange={(e) => setEditedPlanText(e.target.value)}
+                                value={editedPlanText}
+                              />
+                              <div className="flex items-center gap-2 self-end">
+                                <Button
+                                  className="h-6 text-[10px]"
+                                  onClick={() => setIsEditingPlan(false)}
+                                  size="sm"
+                                  variant="ghost"
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  className="h-6 text-[10px]"
+                                  onClick={saveEditedPlan}
+                                  size="sm"
+                                  variant="secondary"
+                                >
+                                  Save Plan
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="whitespace-pre-wrap leading-relaxed text-xs">
+                              {msg.content}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Interactive Buttons for Planning Mode */}
+                        {msg.id === planMessageId && plannerState === "planning" && !isTyping && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            <Button
+                              className="h-6.5 text-[10px] gap-1"
+                              onClick={() => executePlan(currentPlan)}
+                              size="sm"
+                            >
+                              <Check className="size-3" /> Approve Plan
+                            </Button>
+                            <Button
+                              className="h-6.5 text-[10px] gap-1"
+                              onClick={() => setIsEditingPlan(true)}
+                              size="sm"
+                              variant="secondary"
+                            >
+                              <Edit2 className="size-3" /> Edit Plan
+                            </Button>
+                            <Button
+                              className="h-6.5 text-[10px] gap-1"
+                              onClick={() => executePlan()}
+                              size="sm"
+                              variant="outline"
+                            >
+                              <Play className="size-3" /> Skip Planning
+                            </Button>
+                          </div>
                         )}
-                      >
-                        <p className="whitespace-pre-wrap leading-relaxed">
-                          {msg.content}
-                        </p>
                       </div>
                     </div>
                   ))
@@ -657,10 +851,12 @@ export function AgentSidebar() {
                     </div>
                     <div className="flex items-center gap-2 rounded-2xl rounded-tl-sm border border-border/40 bg-muted/60 px-4 py-3 text-foreground">
                       <Loader2 className="size-4 animate-spin opacity-70" />
-                      <span className="text-xs opacity-70">
-                        {iterationCount > 0
-                          ? `Working... (step ${iterationCount}/${MAX_ITERATIONS})`
-                          : "Thinking..."}
+                      <span className="text-xs opacity-70 font-medium">
+                        {plannerState === "planning"
+                          ? "Analyzing request & generating plan..."
+                          : iterationCount > 0
+                            ? `Running terminals... (step ${iterationCount}/${MAX_ITERATIONS})`
+                            : "Orchestrator thinking..."}
                       </span>
                     </div>
                   </div>
@@ -673,6 +869,7 @@ export function AgentSidebar() {
               <div className="flex flex-col gap-3 overflow-hidden rounded-xl border border-border/50 bg-background transition-all duration-200 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/50">
                 <Textarea
                   className="min-h-[80px] w-full resize-none border-0 bg-transparent p-3 text-sm shadow-none focus-visible:ring-0"
+                  disabled={isTyping || plannerState === "planning"}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
@@ -685,6 +882,7 @@ export function AgentSidebar() {
                 />
                 <div className="flex items-center justify-between border-border/40 border-t bg-muted/20 px-3 py-2">
                   <Select
+                    disabled={isTyping || plannerState === "planning"}
                     onValueChange={setTargetTerminalId}
                     value={targetTerminalId}
                   >

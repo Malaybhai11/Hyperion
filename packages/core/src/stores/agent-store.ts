@@ -11,8 +11,29 @@ export interface AgentMessage {
   timestamp: number;
 }
 
+export type TerminalState =
+  | "Idle"
+  | "Planning"
+  | "Waiting"
+  | "Running"
+  | "Streaming"
+  | "Completed"
+  | "Failed"
+  | "Retrying"
+  | "Cancelled";
+
+export interface LogEntry {
+  id: string;
+  timestamp: number;
+  source: "frontend" | "backend" | "ipc" | "api" | "planner" | "terminal";
+  type: "info" | "warn" | "error";
+  message: string;
+  requestId?: string;
+}
+
 interface AgentState {
   addMessage: (workspaceId: string, message: AgentMessage) => void;
+  upsertMessage: (workspaceId: string, message: AgentMessage) => void;
   apiKey: string;
   availableModels: string[];
   baseUrl: string;
@@ -28,10 +49,24 @@ interface AgentState {
   setProvider: (provider: string) => void;
   setSelectedModel: (model: string) => void;
   toggleOpen: () => void;
-}
 
-function generateId(): string {
-  return safeUUID();
+  // System states for loops and monitoring
+  terminalStates: Record<string, TerminalState>;
+  setTerminalState: (paneId: string, state: TerminalState) => void;
+  logs: LogEntry[];
+  addLog: (
+    source: LogEntry["source"],
+    type: LogEntry["type"],
+    message: string,
+    requestId?: string
+  ) => void;
+  clearLogs: () => void;
+  health: {
+    backend: boolean;
+    provider: boolean;
+    planner: boolean;
+  };
+  setHealth: (key: keyof AgentState["health"], status: boolean) => void;
 }
 
 export const useAgentStore = create<AgentState>()(
@@ -58,15 +93,70 @@ export const useAgentStore = create<AgentState>()(
             [workspaceId]: [...(state.messages[workspaceId] || []), message],
           },
         })),
+      upsertMessage: (workspaceId: string, message: AgentMessage) =>
+        set((state) => {
+          const wMsgs = state.messages[workspaceId] || [];
+          const existingIdx = wMsgs.findIndex((m) => m.id === message.id);
+          let nextMsgs;
+          if (existingIdx >= 0) {
+            nextMsgs = [...wMsgs];
+            nextMsgs[existingIdx] = message;
+          } else {
+            nextMsgs = [...wMsgs, message];
+          }
+          return {
+            messages: {
+              ...state.messages,
+              [workspaceId]: nextMsgs,
+            },
+          };
+        }),
       clearMessages: (workspaceId: string) =>
         set((state) => {
           const newMessages = { ...state.messages };
           delete newMessages[workspaceId];
           return { messages: newMessages };
         }),
+
+      terminalStates: {},
+      setTerminalState: (paneId, state) =>
+        set((prev) => ({
+          terminalStates: {
+            ...prev.terminalStates,
+            [paneId]: state,
+          },
+        })),
+      logs: [],
+      addLog: (source, type, message, requestId) => {
+        const log: LogEntry = {
+          id: safeUUID(),
+          timestamp: Date.now(),
+          source,
+          type,
+          message,
+          requestId,
+        };
+        console.log(`[${source.toUpperCase()}] [${type.toUpperCase()}] ${message}`);
+        set((prev) => ({
+          logs: [...prev.logs.slice(-499), log], // Cap logs at 500 entries
+        }));
+      },
+      clearLogs: () => set({ logs: [] }),
+      health: {
+        backend: true,
+        provider: true,
+        planner: true,
+      },
+      setHealth: (key, status) =>
+        set((prev) => ({
+          health: {
+            ...prev.health,
+            [key]: status,
+          },
+        })),
     }),
     {
-      name: "hyperion-agent-store",
+      name: "hyperion-agent-store-v3",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         messages: state.messages,
