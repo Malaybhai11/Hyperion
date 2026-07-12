@@ -59,6 +59,7 @@ export function AiProviderCard() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [checkingHealth, setCheckingHealth] = useState(false);
+  const [providerError, setProviderError] = useState<string | null>(null);
 
   const handleFetchModels = async () => {
     if (!apiKey) {
@@ -99,6 +100,7 @@ export function AiProviderCard() {
         }
         toast.success("Loaded Google Gemini models successfully!");
         setHealth("provider", true);
+        setProviderError(null);
         return;
       }
 
@@ -147,10 +149,11 @@ export function AiProviderCard() {
       } else {
         toast.error("Invalid response format from provider.");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       toast.error("Failed to fetch models. Check your Base URL and API Key.");
       setHealth("provider", false);
+      setProviderError(error.message || String(error));
     } finally {
       setIsLoading(false);
     }
@@ -178,10 +181,21 @@ export function AiProviderCard() {
       if (apiKey) {
         const providerInstance = ProviderFactory.getProvider(provider);
         providerInstance.initialize(apiKey, baseUrl, selectedModel);
-        const isOk = await providerInstance.healthCheck();
-        setHealth("provider", isOk);
+        try {
+          const isOk = await providerInstance.healthCheck();
+          setHealth("provider", isOk);
+          if (isOk) {
+            setProviderError(null);
+          } else {
+            setProviderError((window as any).__lastProviderError || "Authentication failed.");
+          }
+        } catch (err: any) {
+          setHealth("provider", false);
+          setProviderError(err.message || String(err));
+        }
       } else {
         setHealth("provider", false);
+        setProviderError("API Key is missing.");
       }
 
       // 3. Check Planner
@@ -384,7 +398,9 @@ export function AiProviderCard() {
             <Sparkles className="size-5 text-muted-foreground" />
             <div className="flex-1 min-w-0">
               <p className="font-medium text-xs">AI Provider</p>
-              <p className="text-[10px] text-muted-foreground">LLM completion endpoint</p>
+              <p className="text-[10px] text-muted-foreground truncate" title={providerError || "LLM completion endpoint"}>
+                {providerError ? `Error: ${providerError}` : "LLM completion endpoint"}
+              </p>
             </div>
             {health.provider ? (
               <CheckCircle2 className="size-5 text-emerald-500" />

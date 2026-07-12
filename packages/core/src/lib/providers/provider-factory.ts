@@ -76,6 +76,13 @@ export class OpenAICompatibleProvider implements AIProvider {
             max_tokens: 1,
           }),
         });
+        if (!res.ok) {
+          const bodyText = await res.text().catch(() => "");
+          console.error(`Gemini Auth Fail: Status ${res.status}, Body: ${bodyText}`);
+          (window as any).__lastProviderError = `Status ${res.status}: ${bodyText || "Empty response"}`;
+        } else {
+          (window as any).__lastProviderError = null;
+        }
         return res.ok;
       }
       const res = await fetchFn(`${this.baseUrl}/models`, {
@@ -85,8 +92,15 @@ export class OpenAICompatibleProvider implements AIProvider {
           "Content-Type": "application/json",
         },
       });
+      if (!res.ok) {
+        const bodyText = await res.text().catch(() => "");
+        (window as any).__lastProviderError = `Status ${res.status}: ${bodyText || "Empty response"}`;
+      } else {
+        (window as any).__lastProviderError = null;
+      }
       return res.ok;
-    } catch {
+    } catch (err: any) {
+      (window as any).__lastProviderError = err.message || String(err);
       return false;
     }
   }
