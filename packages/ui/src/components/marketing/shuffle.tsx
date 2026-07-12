@@ -25,7 +25,7 @@ interface ShuffleProps {
   shuffleTimes?: number;
   stagger?: number;
   style?: React.CSSProperties;
-  tag?: keyof JSX.IntrinsicElements;
+  tag?: keyof React.JSX.IntrinsicElements;
   text: string;
   textAlign?: React.CSSProperties["textAlign"];
   threshold?: number;
@@ -64,7 +64,7 @@ const Shuffle: React.FC<ShuffleProps> = ({
 
   const splitRef = useRef<any>(null);
   const wrappersRef = useRef<HTMLElement[]>([]);
-  const tlRef = useRef<gsap.core.Tween | null>(null);
+  const tlRef = useRef<gsap.core.Timeline | null>(null);
   const playingRef = useRef(false);
   const hoverHandlerRef = useRef<(() => void) | null>(null);
 
@@ -84,8 +84,8 @@ const Shuffle: React.FC<ShuffleProps> = ({
   const scrollTriggerStart = useMemo(() => {
     const startPct = (1 - threshold) * 100;
     const mm = /^(-?\d+(?:\.\d+)?)(px|em|rem|%)?$/.exec(rootMargin || "");
-    const mv = mm ? Number.parseFloat(mm[1]) : 0;
-    const mu = mm ? mm[2] || "px" : "px";
+    const mv = mm && mm[1] ? Number.parseFloat(mm[1]) : 0;
+    const mu = mm && mm[2] ? mm[2] || "px" : "px";
     const sign =
       mv === 0 ? "" : mv < 0 ? `-=${Math.abs(mv)}${mu}` : `+=${mv}${mu}`;
     return `top ${startPct}%${sign}`;
@@ -282,9 +282,12 @@ const Shuffle: React.FC<ShuffleProps> = ({
           }
           const kids = Array.from(strip.children) as HTMLElement[];
           for (let i = 1; i < kids.length - 1; i++) {
-            kids[i].textContent = scrambleCharset.charAt(
-              Math.floor(Math.random() * scrambleCharset.length)
-            );
+            const kid = kids[i];
+            if (kid) {
+              kid.textContent = scrambleCharset.charAt(
+                Math.floor(Math.random() * scrambleCharset.length)
+              );
+            }
           }
         });
       };
@@ -323,17 +326,17 @@ const Shuffle: React.FC<ShuffleProps> = ({
             }
             if (isVertical) {
               gsap.set(strips, {
-                y: (i) =>
-                  Number.parseFloat(
-                    strips[i].getAttribute("data-start-y") || "0"
-                  ),
+                y: (i) => {
+                  const strip = strips[i];
+                  return strip ? Number.parseFloat(strip.getAttribute("data-start-y") || "0") : 0;
+                },
               });
             } else {
               gsap.set(strips, {
-                x: (i) =>
-                  Number.parseFloat(
-                    strips[i].getAttribute("data-start-x") || "0"
-                  ),
+                x: (i) => {
+                  const strip = strips[i];
+                  return strip ? Number.parseFloat(strip.getAttribute("data-start-x") || "0") : 0;
+                },
               });
             }
             onShuffleComplete?.();
@@ -359,11 +362,15 @@ const Shuffle: React.FC<ShuffleProps> = ({
             stagger: animationMode === "evenodd" ? stagger : 0,
           };
           if (isVertical) {
-            vars.y = (i) =>
-              Number.parseFloat(targets[i].getAttribute("data-final-y") || "0");
+            vars.y = (i: number) => {
+              const target = targets[i];
+              return target ? Number.parseFloat(target.getAttribute("data-final-y") || "0") : 0;
+            };
           } else {
-            vars.x = (i) =>
-              Number.parseFloat(targets[i].getAttribute("data-final-x") || "0");
+            vars.x = (i: number) => {
+              const target = targets[i];
+              return target ? Number.parseFloat(target.getAttribute("data-final-x") || "0") : 0;
+            };
           }
           tl.to(targets, vars, at);
           if (colorFrom && colorTo) {
@@ -486,7 +493,7 @@ const Shuffle: React.FC<ShuffleProps> = ({
     () => `shuffle-parent ${ready ? "is-ready" : ""} ${className}`,
     [ready, className]
   );
-  const Tag = tag as keyof JSX.IntrinsicElements;
+  const Tag = tag as any;
   return React.createElement(
     Tag,
     { ref, className: classes, style: commonStyle },
